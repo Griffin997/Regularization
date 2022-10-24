@@ -1,7 +1,7 @@
 %%%%%
 % Choose the data set to download and load file name
-file_name = "f89";
-open(strcat(file_name,"\I_raw.mat"));
+file_name = "f43";
+load(strcat("Brain_Dataset\",file_name,"\I_raw.mat"));
 
 for i = 1:size(I_raw,3)
     I_slice = I_raw(:,:,i,1);
@@ -12,11 +12,11 @@ end
 
 
 %% Process Section
-% close all
+close all
 
-% slice_focus = 2;
-% figure
-% im = imshow(imread(I_slice));
-% area_selected = drawfreehand(im);
-% 
-% finalFig = area_selected.createMask();
+slice_focus = 9;
+figure
+im = imagesc(I_raw(:,:,slice_focus,1));
+area_selected = drawfreehand(im);
+
+finalFig = area_selected.createMask();
