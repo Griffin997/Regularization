@@ -4,7 +4,7 @@ directory_name = "MB_References";
 file_name = "BLSA_1935_06_MCIAD_m79";
 raw_name = "I4D_raw.mat";
 load(strcat(directory_name,"\",file_name,'\', raw_name));
-save_file = true;
+save_file = false;
 
 for i = 1:size(I4D_raw,3)
     I_slice = I4D_raw(:,:,i,1);
@@ -38,4 +38,4 @@ end
 %% Load Section Check
 load(strcat(directory_name,'/',file_name,'/','rS_slice',string(slice_focus),'.mat'))
 
-imagesc(slice_oi(:,:,1))
+imagesc(slice_oi(:,:,32))
