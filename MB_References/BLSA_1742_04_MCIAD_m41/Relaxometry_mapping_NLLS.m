@@ -42,15 +42,15 @@ end
 %%
 s=5;
 figure;
-subplot(221);imagesc(MWF_NESMA(:,:,s),[0 0.4]);colormap jet; axis off;colorbar;title('MWF (n.u.)');
-subplot(222);imagesc(T2s_NESMA(:,:,s),[0 60]);colormap jet; axis off;colorbar;title('T2s (ms)');
-subplot(223);imagesc(T2l_NESMA(:,:,s),[0 140]);colormap jet; axis off;colorbar;title('T2l (ms)');
+subplot(131);imagesc(MWF_NESMA(:,:,s),[0 0.4]);colormap jet; axis off;colorbar;title('MWF (n.u.)');
+subplot(132);imagesc(T2s_NESMA(:,:,s),[0 60]);colormap jet; axis off;colorbar;title('T2s (ms)');
+subplot(133);imagesc(T2l_NESMA(:,:,s),[0 140]);colormap jet; axis off;colorbar;title('T2l (ms)');
 sgtitle("NESMA Data - m41 - slice 5 (1-10)")
 
 figure;
-subplot(221);imagesc(MWF_raw(:,:,s),[0 0.4]);colormap jet; axis off;colorbar;title('MWF (n.u.)');
-subplot(222);imagesc(T2s_raw(:,:,s),[0 60]);colormap jet; axis off;colorbar;title('T2s (ms)');
-subplot(223);imagesc(T2l_raw(:,:,s),[0 140]);colormap jet; axis off;colorbar;title('T2l (ms)');
+subplot(131);imagesc(MWF_raw(:,:,s),[0 0.4]);colormap jet; axis off;colorbar;title('MWF (n.u.)');
+subplot(132);imagesc(T2s_raw(:,:,s),[0 60]);colormap jet; axis off;colorbar;title('T2s (ms)');
+subplot(133);imagesc(T2l_raw(:,:,s),[0 140]);colormap jet; axis off;colorbar;title('T2l (ms)');
 sgtitle("Raw Data - m41 - slice 5 (1-10)")
 
 %% 

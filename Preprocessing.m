@@ -1,7 +1,7 @@
 %%%%%
 % Choose the data set to download and load file name
 directory_name = "MB_References";
-file_name = "BLSA_1935_06_MCIAD_m79";
+file_name = "BLSA_1742_04_MCIAD_m41";
 raw_name = "I4D_raw.mat";
 load(strcat(directory_name,"\",file_name,'\', raw_name));
 save_file = true;
