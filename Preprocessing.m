@@ -2,12 +2,14 @@
 % Choose the data set to download and load file name
 directory_name = "MB_References";
 file_name = "BLSA_1742_04_MCIAD_m41";
-raw_name = "I4D_raw.mat";
+raw_name = "I4D_NESMA.mat";
 load(strcat(directory_name,"\",file_name,'\', raw_name));
 save_file = false;
 
-for i = 1:size(I4D_raw,3)
-    I_slice = I4D_raw(:,:,i,1);
+I4D_object = I4D_NESMA;
+
+for i = 1:size(I4D_object,3)
+    I_slice = I4D_object(:,:,i,1);
     figure;
     imagesc(I_slice)
     title(strcat("I_{raw} data on slice = ",string(i)))
@@ -19,14 +21,14 @@ close all
 
 slice_focus = 5;
 figure
-im = imagesc(I4D_raw(:,:,slice_focus,1));
+im = imagesc(I4D_object(:,:,slice_focus,1));
 area_selected = drawfreehand;
 
 finalFig_area = area_selected.createMask();
 
-slice_oi = zeros(size(I4D_raw,1),size(I4D_raw,2),size(I4D_raw,4));
-for i = 1:size(I4D_raw,4)
-    slice_oi(:,:,i) = I4D_raw(:,:,slice_focus,i).*finalFig_area;
+slice_oi = zeros(size(I4D_object,1),size(I4D_object,2),size(I4D_object,4));
+for i = 1:size(I4D_object,4)
+    slice_oi(:,:,i) = I4D_object(:,:,slice_focus,i).*finalFig_area;
 end
 
 %% Save Section
