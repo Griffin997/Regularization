@@ -36,7 +36,7 @@ with open('SimulationSets//standardNoise_' + noise_date_oi + '.pkl', 'rb') as ha
     noise_mat = np.array(noise_mat)
 handle.close()
 
-SNR_mat = [20, 100]
+SNR_mat = [50, 500]
 n_elements = 128
 #Weighting term to ensure the c_i and T2_i are roughly the same magnitude
 ob_weight = 100
