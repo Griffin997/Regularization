@@ -47,7 +47,7 @@ num_multistarts = 10
 agg_weights = np.array([1, 1, 1/ob_weight, 1/ob_weight])
 
 upper_bound = [2,2,100,300] #Set upper bound on parameters c1, c2, T21, T22, respectively
-initial = (0.5, 0.5, 30, 150) #Set initial guesses
+# initial = (0.5, 0.5, 30, 150) #Set initial guesses
 
 tdata = np.linspace(0, 635, n_elements)
 lambdas = np.append(0, np.logspace(-7,1,51))
