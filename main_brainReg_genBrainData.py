@@ -16,9 +16,6 @@ import pickle
 from tqdm import tqdm, trange
 from datetime import date
 
-import sklearn
-from sklearn.cluster import KMeans
-
 import multiprocess as mp
 from multiprocessing import Pool, freeze_support
 from multiprocessing import set_start_method
@@ -351,7 +348,7 @@ for iter in range(iterations):    #Build {iterations} number of noisey brain rea
         print(len(lis)) #should be target_iterator.shape[0]
         df = pd.concat(lis, ignore_index= True)
 
-        df.to_feather(f'SimulationSets//brainData_' + seriesTag + f'_{iter}.feather')           
+        df.to_feather(f'ExperimentalSets//brainData_' + seriesTag + f'_{iter}.feather')           
 
 ############## Save General Code Code ################
 
@@ -369,6 +366,6 @@ hprParams = {
     'ms_upBound': ms_upper_bound
 }
 
-f = open(f'SimulationSets//hprParameter_info_' + day + month + year +'.pkl','wb')
+f = open(f'ExperimentalSets//hprParameter_info_' + day + month + year +'.pkl','wb')
 pickle.dump(hprParams,f)
 f.close()
