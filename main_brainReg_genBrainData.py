@@ -40,7 +40,7 @@ post_normalize = True       #Ensures that c1 + c2 = 1
 
 ############## Initializing Data ##########
 
-brain_data = scipy.io.loadmat('C:\\co\\NIA\\Regularization\\MB_References\\BLSA_1742_04_MCIAD_m41\\rS_slice5.mat')
+brain_data = scipy.io.loadmat(os.getcwd() + '/MB_References/BLSA_1742_04_MCIAD_m41/rS_slice5.mat')
 I_raw = brain_data['slice_oi']
 
 n_hori, n_vert, n_elements_brain = I_raw.shape
@@ -67,8 +67,8 @@ upper_bound = [2,2,100,300]
 SNR_goal = 40
 
 #This is incorporated into the estimate_NLLS funtionas of 1/16/22
-# if estimate_offset:
-#     upper_bound.append(np.inf)
+if estimate_offset:
+    upper_bound.append(np.inf)
 
 lambdas = np.append(0, np.logspace(-7,1,51))
 
@@ -80,8 +80,7 @@ num_multistarts = 10
 ms_upper_bound = [1,80,300]  
 
 #Parameters for Building the Repository
-iterations = 3
-
+iterations = 1
 
 vert1 = 165             #60     #108
 vert2 = 180            #125     #116
@@ -93,7 +92,6 @@ hBox = (hori1,hori2,hori2,hori1,hori1)
 
 noiseRegion = [vert1,vert2,hori1,hori2]
 
-
 # Important for Naming
 date = date.today()
 day = date.strftime('%d')
@@ -101,7 +99,6 @@ month = date.strftime('%B')[0:3]
 year = date.strftime('%y')
 
 seriesTag = ("trial_" + day + month + year)
-
 
 ############# Signal Functions ##############
 
@@ -223,25 +220,24 @@ def check_param_order(popt):
 def estimate_parameters(data, lam, n_initials = num_multistarts):
     #Pick n_initials random initial conditions within the bound, and choose the one giving the lowest model-data mismatch residual
     data_start = np.abs(data[0])
-    data_tilde = np.append(data, lam*[0,0,0,0]) # Adds zeros to the end of the regularization array for the param estimation
+    data_tilde = np.append(data, [0,0,0,0]) # Adds zeros to the end of the regularization array for the param estimation
     
     RSS_hold = np.inf
     for i in range(n_initials):
         np.random.seed(i)
         init_params = generate_p0()
 
-        up_bnd = upper_bound*np.array([data_start, data_start, 1, 1])
-
-        if estimate_offset:
-            up_bnd.append(np.inf)
-
-        assert(np.size(up_bnd) == np.size(init_params))
+        # up_bnd = list(upper_bound*np.array([data_start, data_start, 1, 1]))
+        up_bnd = upper_bound
         
         try:
             popt, _ = curve_fit(
-            G_tilde(lam), tdata, data_tilde, bounds = ([0,0,0,0,0], up_bnd), p0=init_params, max_nfev = 4000)
+            G_tilde(lam), tdata, data_tilde, bounds = ([0,0,0,0,0], upper_bound), p0=init_params, max_nfev = 4000)
         except:
-            popt = [0,0,1,1]
+            if estimate_offset:
+                popt = [0,0,1,1,0]
+            else:
+                popt = [0,0,1,1]
             print("Max feval reached")
 
         if estimate_offset:
@@ -256,32 +252,14 @@ def estimate_parameters(data, lam, n_initials = num_multistarts):
             best_popt = popt[0:4]
             RSS_hold = RSS_temp
         
-    c1_ret, c2_ret, T21_ld, T22_ld = best_popt
-    
-    if T21_ld.size == 1:
-        T21_ld = T21_ld.item()
-        T22_ld = T22_ld.item()
-        c1_ret = c1_ret.item()
-        c2_ret = c2_ret.item()
-
-    # Enforces T21 <= T22
-    if T21_ld > T22_ld:
-        T21_ld_new = T22_ld
-        T22_ld = T21_ld
-        T21_ld = T21_ld_new
-        c1_ret_new = c1_ret
-        c1_ret = c2_ret
-        c2_ret = c1_ret_new
-
-        #A general check
-        assert (T21_ld != T22_ld)
+    popt = check_param_order(best_popt)
 
     if post_normalize:
-        ci_sum = c1_ret + c2_ret
-        c1_ret = c1_ret/ci_sum
-        c2_ret = c2_ret/ci_sum
+        ci_sum = popt[0] + popt[1]
+        popt[0] = popt[0]/ci_sum
+        popt[1] = popt[1]/ci_sum
  
-    return c1_ret, c2_ret, T21_ld, T22_ld
+    return popt, RSS_hold
 
 def generate_all_estimates(i_voxel, brain_data_3D):
     #Generates a comprehensive matrix of all parameter estimates for all param combinations, 
@@ -293,18 +271,11 @@ def generate_all_estimates(i_voxel, brain_data_3D):
     for iLam in range(len(lambdas)):    #Loop through all lambda values
         e_df = pd.DataFrame(columns = ["Data", "Indices", "Estimates", "RSS"])
         lam = lambdas[iLam]
-        param_estimates = estimate_parameters(noise_data, lam)
-
-        if estimate_offset:
-            estimated_model = G_off(tdata, *param_estimates)
-        else:
-            estimated_model = G(tdata, *param_estimates)
-        estimated_model = G(tdata, *param_estimates)
-        one_rss = np.sum((estimated_model - noise_data)**2)
-        e_df["Data"] = [param_estimates]
-        e_df["Indices"] = [i_hori, i_vert]
+        param_estimates, RSS_estimate = estimate_parameters(noise_data, lam)
+        e_df["Data"] = [noise_data]
+        e_df["Indices"] = [[i_hori, i_vert]]
         e_df["Estimates"] = [param_estimates]
-        e_df["RSS"] = [one_rss]
+        e_df["RSS"] = [RSS_estimate]
         e_lis.append(e_df)
     
     return pd.concat(e_lis, ignore_index= True)
@@ -318,7 +289,9 @@ for iter in range(iterations):    #Build {iterations} number of noisey brain rea
 
     np.random.seed(iter)
 
-    noise_iteration = add_noise_brain_uniform(I_masked, SNR_goal, noiseRegion, I_mask_factor)
+    # I_filtered = NESMA_filtering_3D(I_masked, txy, thresh)
+    I_noised = add_noise_brain_uniform(I_masked, SNR_goal, noiseRegion, I_mask_factor)[0]
+    noise_iteration = normalize_brain(I_noised)
 
     if __name__ == '__main__':
         freeze_support()
