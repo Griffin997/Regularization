@@ -1,5 +1,6 @@
 ############# Libaries ###############
 
+import h5py
 import scipy
 import scipy.io
 from scipy.optimize import curve_fit
@@ -15,6 +16,8 @@ import pickle
 from tqdm import tqdm, trange
 from datetime import date
 
+import sklearn
+from sklearn.cluster import KMeans
 
 import multiprocess as mp
 from multiprocessing import Pool, freeze_support
@@ -27,38 +30,72 @@ parent = os.path.dirname(os.path.abspath(''))
 sys.path.append(parent)
 import functools
 
+############# Data Set Options & Hyperparameters ############
+
+add_noise = True            #Add noise to the data beyond what is there naturally
+add_mask = True             #Add a mask to the data - this mask eliminates data below a threshold (mas_amplitude)
+uniform_noise = True        #Adds noise uniformly across the brain
+apply_filter = True         #Turns on and off the filter command for the process
+apply_normalizer = True     #Normalizes the data during the processing step
+estimate_offset = True      #Adds an offset to the signal that is estimated
+maintain_mask = True        #maintains the masking used for the non-noised version - pixels are held constant
+post_normalize = True       #Ensures that c1 + c2 = 1
+
+############## Initializing Data ##########
+
+brain_data = scipy.io.loadmat('C:\\co\\NIA\\Regularization\\MB_References\\BLSA_1742_04_MCIAD_m41\\rS_slice5.mat')
+I_raw = brain_data['slice_oi']
+
+n_hori, n_vert, n_elements_brain = I_raw.shape
+
+t_increment_brain = 11.3 #This is a measurement originally indicated by Chuan Bi in the initial email about this data
+tdata = np.linspace(t_increment_brain, (n_elements_brain)*(t_increment_brain), n_elements_brain)
+
+#This is how we will keep track of all voxels that are called
+target_iterator = np.array([item for item in itertools.product(np.arange(0,n_hori,1), np.arange(0,n_vert,1))])
+
+#NESMA Filter parameters
+txy = 3
+# tz = 5  #unused in the 2D scans in this code
+thresh = 5
+# all pixels with a lower mask amplitude are considered to be free water (i.e. vesicles)
+mask_amplitude = 600
+
 ############# Global Params ###############
 
-noise_date_oi = "28Nov22" #This is taken as the noise to keep everything standard
+#These bounds were chosen to match the simulated data while also being restrictive enough
+#This provides a little extra space as the hard bounds would be [1,1,50,300]
+upper_bound = [2,2,100,300]
 
-with open('SimulationSets//standardNoise_' + noise_date_oi + '.pkl', 'rb') as handle:
-    noise_mat = pickle.load(handle)
-    noise_mat = np.array(noise_mat)
-handle.close()
+SNR_goal = 40
 
-SNR_mat = [50, 500]
-n_elements = 128
-#Weighting term to ensure the c_i and T2_i are roughly the same magnitude
+#This is incorporated into the estimate_NLLS funtionas of 1/16/22
+# if estimate_offset:
+#     upper_bound.append(np.inf)
+
+lambdas = np.append(0, np.logspace(-7,1,51))
+
 ob_weight = 100
-n_noise_realizations = 500 #500
+agg_weights = np.array([1, 1, 1/ob_weight, 1/ob_weight])
 
 num_multistarts = 10
 
-agg_weights = np.array([1, 1, 1/ob_weight, 1/ob_weight])
+ms_upper_bound = [1,80,300]  
 
-upper_bound = [2,2,100,300] #Set upper bound on parameters c1, c2, T21, T22, respectively
-initial = (0.5, 0.5, 30, 150) #Set initial guesses
+#Parameters for Building the Repository
+iterations = 3
 
-tdata = np.linspace(0, 635, n_elements)
-lambdas = np.append(0, np.logspace(-7,1,51))
 
-# Parameters Loop Through
-c1_set = [0.0, 0.2, 0.4, 0.5, 0.6, 0.8, 1.0]
-c2_set = 1-np.array(c1_set)
-T21_set = [10,20,30,40,50]
-T22_set = [70,90,110,130,150]
+vert1 = 165             #60     #108
+vert2 = 180            #125     #116
+hori1 = 120            #100      #86
+hori2 = 180            #115      #93
 
-param_name_list = ['c1','c2','T21','T22']
+vBox = (vert1,vert1,vert2,vert2,vert1)
+hBox = (hori1,hori2,hori2,hori1,hori1)
+
+noiseRegion = [vert1,vert2,hori1,hori2]
+
 
 # Important for Naming
 date = date.today()
@@ -66,30 +103,118 @@ day = date.strftime('%d')
 month = date.strftime('%B')[0:3]
 year = date.strftime('%y')
 
+seriesTag = ("trial_" + day + month + year)
 
-############# Functions ##############
+
+############# Signal Functions ##############
 
 def G(t, con_1, con_2, tau_1, tau_2): 
     function = con_1*np.exp(-t/tau_1) + con_2*np.exp(-t/tau_2)
     return function
 
-def G_tilde(lam, SA = 1):
+def G_off(t, con_1, con_2, tau_1, tau_2, offSet): 
+    function = con_1*np.exp(-t/tau_1) + con_2*np.exp(-t/tau_2) + offSet
+    return function
+
+def G_tilde(lam, SA = 1, offSet = estimate_offset):
     #SA defines the signal amplitude, defaults to 1 for simulated data
-    def Gt_lam(t, con1, con2, tau1, tau2):
-        return np.append(G(t, con1, con2, tau1, tau2), [lam*con1/SA, lam*con2/SA, lam*tau1/ob_weight, lam*tau2/ob_weight])
+    if offSet:
+        def Gt_lam(t, con1, con2, tau1, tau2, oS):
+            return np.append(G_off(t, con1, con2, tau1, tau2, oS), [lam*con1/SA, lam*con2/SA, lam*tau1/ob_weight, lam*tau2/ob_weight])
+    else:
+        def Gt_lam(t, con1, con2, tau1, tau2):
+            return np.append(G(t, con1, con2, tau1, tau2), [lam*con1/SA, lam*con2/SA, lam*tau1/ob_weight, lam*tau2/ob_weight])
     return Gt_lam
 
-def construct_paramList(c1_list, T21_list, T22_list):
-    preList = [item for item in itertools.product(c1_list, T21_list, T22_list)]
-    postList = [list(elem) for elem in preList]
-    [elem.insert(1,1-elem[0]) for elem in postList]
-    postList = np.array(postList)
-    return postList
+############# Data Processing Functions ##############
 
-### Needed to process ASAP
-target_iterator = construct_paramList(c1_set, T21_set, T22_set)
+def NESMA_filtering_3D(raw,txy,thresh,verbose=False):
+    #Inputs:
+    # raw    : 3D (x,y,MS) raw/noisy volume. x,y are the spatial coordinates, while MS is the multispectral dimension
+    # txy    : Defines the size, (2*txy+1)-by-(2*txy+1) in voxels, of the search window in the x-y plane.
+    # thresh : 100%-thresh defines the similarity threshold (%). Values between 1% to 10% are recommended.
+
+    # Output:
+    # S_NESMA: 3D (x,y,MS) NESMA-filtered volume
+    
+    (m,n,o) = raw.shape
+    S_NESMA = np.zeros((m,n,o))
+    
+    for j in trange(n):
+        if verbose==True and j%50==0:
+            print('NESMA filtering ... Slice #', j, 'of', n)
+        for i in range(m):
+            rmin=max(i-txy,0)
+            rmax=min(i+txy,m)
+                    
+            smin=max(j-txy,0)
+            smax=min(j+txy,n)
+                    
+            L = (rmax-rmin)*(smax-smin)
+        
+            rawi = np.reshape(raw[rmin:rmax,smin:smax,:],(L,o)) #GSH - Different than the 4D version but seems appropriate
+            x=raw[i,j,:]
+            
+            if x[0] != 0:
+                D = 100*np.sum(abs(rawi-x),axis=1)/np.sum(x) #This is the Relative Manhattan distance between voxel intensities
+                pos = D<thresh
+                    
+                S_NESMA[i,j,:] = np.mean(rawi[pos==True,:], axis=0)
+    
+    return S_NESMA
+
+def mask_data(raw, mask_amplitude):
+    #Sets every decay curve in the data set where the amplitude is less than a threshold value to zero
+    I_masked = np.copy(raw)
+    I_masked[I_masked[:,:,0]<mask_amplitude] = 0
+    return I_masked
+
+def normalize_brain(I_data):
+    n_hori, n_vert, n_elem = I_data.shape
+    I_normalized = np.zeros(I_data.shape)
+    for i_hori in trange(n_hori):
+        for i_vert in range(n_vert):
+            data = I_data[i_hori,i_vert,:]
+            if data[0]>0:
+                data_normalized = data/(data[0]) #GSH - normalizing by double the maximum/initial signal
+            else:
+                data_normalized = np.zeros(n_elements_brain)
+            I_normalized[i_hori,i_vert,:] = data_normalized
+    return I_normalized
+
+def add_noise_brain_uniform(raw, SNR_desired, region, I_mask_factor):
+    #This function was built with the intention of taking a region (e.g. the homogenous region to the right of the ventricles)
+    #Add noise to make sure the final SNR is close to the desired SNR
+
+    v1,v2,h1,h2 = region
+
+    rawZone = raw[v1:v2,h1:h2,:]
+
+    regionZero = rawZone[:, :, 0]
+    sigRef = np.mean(regionZero)
+
+    regionEnd = rawZone[:, :, -3:]
+    initSD = np.std(regionEnd)
+
+    addSD = (sigRef**2/SNR_desired**2 - initSD**2)**(1/2)
+
+    noiseMat = np.random.normal(0,addSD,raw.shape)
+    I_noised = raw + noiseMat*I_mask_factor
+
+    return I_noised, addSD
+
+################## Parameter Estimation Functions ###############
+
+def generate_p0(ms_ub = ms_upper_bound, offSet = estimate_offset):
+    three_params = np.random.uniform(0,1,3)*ms_ub
+    init_params = (three_params[0], 1-three_params[0], three_params[1], three_params[2])
+
+    if offSet:
+        init_params = init_params + (0.2,) #Initialize the noise floor pretty low
+    return init_params
 
 def check_param_order(popt):
+    #Function to automate the order of parameters if desired
     #Reshaping of array to ensure that the parameter pairs all end up in the appropriate place - ensures that T22 > T21
     if (popt[-1] < popt[-2]): #We want by convention to make sure that T21 is <= T22
         for pi in range(np.size(popt)//2):
@@ -100,84 +225,103 @@ def check_param_order(popt):
 
 def estimate_parameters(data, lam, n_initials = num_multistarts):
     #Pick n_initials random initial conditions within the bound, and choose the one giving the lowest model-data mismatch residual
-    random_residuals = np.empty(n_initials)
-    estimates = np.zeros((n_initials,4))
     data_start = np.abs(data[0])
-    data_tilde = np.append(data, [0,0,0,0]) # Adds zeros to the end of the regularization array for the param estimation
+    data_tilde = np.append(data, lam*[0,0,0,0]) # Adds zeros to the end of the regularization array for the param estimation
     
+    RSS_hold = np.inf
     for i in range(n_initials):
         np.random.seed(i)
-        ic1 = np.random.uniform(0,1)
-        ic2 = 1-ic1
-        ic1 = ic1*data_start
-        ic2 = ic2*data_start
-        iT21 = np.random.uniform(0,upper_bound[-2])
-        iT22 = np.random.uniform(iT21,upper_bound[-1])
-        p0 = [ic1,ic2,iT21,iT22]
+        init_params = generate_p0()
+
         up_bnd = upper_bound*np.array([data_start, data_start, 1, 1])
-        assert(np.size(up_bnd) == np.size(p0))
+
+        if estimate_offset:
+            up_bnd.append(np.inf)
+
+        assert(np.size(up_bnd) == np.size(init_params))
         
         try:
-            popt, _ = curve_fit(G_tilde(lam), tdata, data_tilde, bounds = (0, up_bnd), p0=p0, max_nfev = 4000)
+            popt, _ = curve_fit(
+            G_tilde(lam), tdata, data_tilde, bounds = ([0,0,0,0,0], up_bnd), p0=init_params, max_nfev = 4000)
         except:
             popt = [0,0,1,1]
             print("Max feval reached")
-        
-        c1_ret, c2_ret, T21_ld, T22_ld = popt
-        
-        # Enforces T21 <= T22
-        if T21_ld.size == 1:
-            T21_ld = T21_ld.item()
-            T22_ld = T22_ld.item()
-            c1_ret = c1_ret.item()
-            c2_ret = c2_ret.item()
 
+        if estimate_offset:
+            est_curve = G_off(tdata,*popt)
+        else:
+            est_curve = G(tdata,*popt)
+
+        RSS_temp = np.sum((est_curve - data)**2)
+        RSS_pTemp = lam*agg_weights*popt[0:4]
+        RSS_temp = RSS_temp + np.linalg.norm(RSS_pTemp)
+        if RSS_temp < RSS_hold:
+            best_popt = popt[0:4]
+            RSS_hold = RSS_temp
         
-        if T21_ld > T22_ld:
-            T21_ld_new = T22_ld
-            T22_ld = T21_ld
-            T21_ld = T21_ld_new
-            c1_ret_new = c1_ret
-            c1_ret = c2_ret
-            c2_ret = c1_ret_new
+    c1_ret, c2_ret, T21_ld, T22_ld = best_popt
+    
+    if T21_ld.size == 1:
+        T21_ld = T21_ld.item()
+        T22_ld = T22_ld.item()
+        c1_ret = c1_ret.item()
+        c2_ret = c2_ret.item()
 
-            assert (T21_ld != T22_ld)
+    # Enforces T21 <= T22
+    if T21_ld > T22_ld:
+        T21_ld_new = T22_ld
+        T22_ld = T21_ld
+        T21_ld = T21_ld_new
+        c1_ret_new = c1_ret
+        c1_ret = c2_ret
+        c2_ret = c1_ret_new
 
-        # popt = check_param_order(popt) #Require T22>T21
-        estimates[i] = np.array([c1_ret, c2_ret, T21_ld, T22_ld])
-        estimated_model = G(tdata, *popt)
-        residual = np.sum((estimated_model - data)**2)
-        random_residuals[i] = residual
-    min_residual_idx = np.argmin(random_residuals)
-    min_residual_estimates = estimates[min_residual_idx]
+        #A general check
+        assert (T21_ld != T22_ld)
+
+    if post_normalize:
+        ci_sum = c1_ret + c2_ret
+        c1_ret = c1_ret/ci_sum
+        c2_ret = c2_ret/ci_sum
  
-    return min_residual_estimates
+    return c1_ret, c2_ret, T21_ld, T22_ld
 
-def generate_all_estimates(i_param_combo):
+def generate_all_estimates(i_voxel, brain_data_3D):
     #Generates a comprehensive matrix of all parameter estimates for all param combinations, 
     #noise realizations, SNR values, and lambdas of interest
-    param_combo = target_iterator[i_param_combo]
+    i_hori, i_vert = target_iterator[i_voxel]
+    noise_data = brain_data_3D[i_hori, i_vert, :]
     e_lis = []
-    underlying = G(tdata, *param_combo)
-    all_noise = underlying + (1/iSNR)*noise_mat
 
-    for nr in range(n_noise_realizations):    #Loop through all noise realizations
-        noise_data = all_noise[nr,:]
+    for iLam in range(len(lambdas)):    #Loop through all lambda values
+        e_df = pd.DataFrame(columns = ["Data", "Indices", "Estimates", "RSS"])
+        lam = lambdas[iLam]
+        param_estimates = estimate_parameters(noise_data, lam)
 
-        for iLam in range(len(lambdas)):    #Loop through all lambda values
-            e_df = pd.DataFrame(columns = ["TrueParams", "Estimates", "RSS"])
-            lam = lambdas[iLam]
-            param_estimates = estimate_parameters(noise_data, lam)
-
+        if estimate_offset:
+            estimated_model = G_off(tdata, *param_estimates)
+        else:
             estimated_model = G(tdata, *param_estimates)
-            one_rss = np.sum((estimated_model - noise_data)**2)
-            e_df["Estimates"] = [param_estimates]
-            e_df["RSS"] = [one_rss]
-            e_df["TrueParams"] = [param_combo]
-            e_lis.append(e_df)
+        estimated_model = G(tdata, *param_estimates)
+        one_rss = np.sum((estimated_model - noise_data)**2)
+        e_df["Data"] = [param_estimates]
+        e_df["Indices"] = [i_hori, i_vert]
+        e_df["Estimates"] = [param_estimates]
+        e_df["RSS"] = [one_rss]
+        e_lis.append(e_df)
+    
     return pd.concat(e_lis, ignore_index= True)
 
-for iSNR in SNR_mat:    #Loop through different SNR values
+#### This ensures that the same mask is applied throughout
+if add_mask:
+    I_masked = mask_data(I_raw, mask_amplitude)
+    I_mask_factor = (I_masked!=0)
+
+for iter in range(iterations):    #Build {iterations} number of noisey brain realizations
+
+    np.random.seed(iter)
+
+    noise_iteration = add_noise_brain_uniform(I_masked, SNR_goal, noiseRegion, I_mask_factor)
 
     if __name__ == '__main__':
         freeze_support()
@@ -187,13 +331,13 @@ for iSNR in SNR_mat:    #Loop through different SNR values
         num_cpus_avail = 80
         print("Using Super Computer")
 
-        print(f"Building {iSNR} Dataset...")
+        print(f"Building {iter} Dataset...")
         lis = []
 
         with mp.Pool(processes = num_cpus_avail) as pool:
 
             with tqdm(total=target_iterator.shape[0]) as pbar:
-                for estimates_dataframe in pool.imap_unordered(generate_all_estimates, range(target_iterator.shape[0])):
+                for estimates_dataframe in pool.imap_unordered(lambda hold_label: generate_all_estimates(hold_label, noise_iteration), range(target_iterator.shape[0])):
                     # if k == 0:
                         # print("Starting...")
 
@@ -207,22 +351,22 @@ for iSNR in SNR_mat:    #Loop through different SNR values
         print(len(lis)) #should be target_iterator.shape[0]
         df = pd.concat(lis, ignore_index= True)
 
-        df.to_feather(f'SimulationSets//runInfo_SNR_{iSNR}_' + day + month + year + '.feather')           
+        df.to_feather(f'SimulationSets//brainData_' + seriesTag + f'_{iter}.feather')           
 
 ############## Save General Code Code ################
 
 hprParams = {
-    "SNR_mat": SNR_mat,
-    'n_noise_realizations': n_noise_realizations,
+    "SNR_goal": SNR_goal,
+    'n_noise_realizations': iterations,
     'lambdas': lambdas,
-    "c1_set": c1_set,
-    "T21_set": T21_set,
-    "T22_set": T22_set,
-    "noise_date_oi": noise_date_oi,
+    "data_file": "BLSA_1742_04_MCIAD_m41",
+    "data_slice": "rS_slice5",
     'tdata': tdata,
     'ob_weight': ob_weight,
     'num_multistarts': num_multistarts,
-    'upper_bound': upper_bound
+    'upper_bound': upper_bound,
+    'mask_amp': mask_amplitude,
+    'ms_upBound': ms_upper_bound
 }
 
 f = open(f'SimulationSets//hprParameter_info_' + day + month + year +'.pkl','wb')
