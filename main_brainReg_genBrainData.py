@@ -321,7 +321,7 @@ for iter in range(iterations):    #Build {iterations} number of noisey brain rea
         print(len(lis)) #should be target_iterator.shape[0]
         df = pd.concat(lis, ignore_index= True)
 
-        df.to_feather(f'ExperimentalSets//brainData_' + seriesTag + f'_{iter}.feather')           
+        df.to_feather(f'ExperimentalSets//brainData_' + seriesTag + f'_iteration_{iter}.feather')           
 
 ############## Save General Code Code ################
 
@@ -336,7 +336,9 @@ hprParams = {
     'num_multistarts': num_multistarts,
     'upper_bound': upper_bound,
     'mask_amp': mask_amplitude,
-    'ms_upBound': ms_upper_bound
+    'ms_upBound': ms_upper_bound,
+    'n_horizontal': n_hori,
+    'n_verticle': n_vert
 }
 
 f = open(f'ExperimentalSets//hprParameter_info_' + day + month + year +'.pkl','wb')
