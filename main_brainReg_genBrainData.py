@@ -216,7 +216,6 @@ def check_param_order(popt):
 
 def estimate_parameters(data, lam, n_initials = num_multistarts):
     #Pick n_initials random initial conditions within the bound, and choose the one giving the lowest model-data mismatch residual
-    data_start = np.abs(data[0])
     data_tilde = np.append(data, [0,0,0,0]) # Adds zeros to the end of the regularization array for the param estimation
     
     RSS_hold = np.inf
@@ -270,11 +269,12 @@ def generate_all_estimates(i_voxel, brain_data_3D):
         lam = lambdas[iLam]
 
         if np.all(noise_data == 0):
-            param_estimates = [0,0,0,0]
+            param_estimates = [0,0,1,1]
             RSS_estimate = 0
         else:
             param_estimates, RSS_estimate = estimate_parameters(noise_data, lam)
         
+        assert(noise_data.shape[0] == n_elements_brain)
         e_df["Data"] = [noise_data]
         e_df["Indices"] = [[i_vert, i_hori]]
         e_df["Estimates"] = [param_estimates]
