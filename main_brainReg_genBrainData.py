@@ -8,6 +8,7 @@ from scipy.optimize import least_squares
 import numpy as np
 import pandas as pd
 import statistics
+import matplotlib.pyplot as plt
 import math
 import time
 import itertools
@@ -29,27 +30,29 @@ import functools
 
 ############# Data Set Options & Hyperparameters ############
 
-add_noise = True            #Add noise to the data beyond what is there naturally
+add_noise = False            #Add noise to the data beyond what is there naturally
 add_mask = True             #Add a mask to the data - this mask eliminates data below a threshold (mas_amplitude)
-uniform_noise = True        #Adds noise uniformly across the brain
-apply_filter = True         #Turns on and off the filter command for the process
 apply_normalizer = True     #Normalizes the data during the processing step
 estimate_offset = True      #Adds an offset to the signal that is estimated
-maintain_mask = True        #maintains the masking used for the non-noised version - pixels are held constant
-post_normalize = True       #Ensures that c1 + c2 = 1
+subsection = True           #Looks at a region a sixteenth of the full size
 
 ############## Initializing Data ##########
 
 brain_data = scipy.io.loadmat(os.getcwd() + '/MB_References/BLSA_1742_04_MCIAD_m41/rS_slice5.mat')
 I_raw = brain_data['slice_oi']
 
-n_hori, n_vert, n_elements_brain = I_raw.shape
+if subsection:
+    I_raw_x = I_raw.shape[0]//4
+    I_raw_y = I_raw.shape[1]//4
+    I_raw = I_raw[I_raw_x:2*I_raw_x, I_raw_y:2*I_raw_y, :]
+
+n_vert, n_hori, n_elements_brain = I_raw.shape
 
 t_increment_brain = 11.3 #This is a measurement originally indicated by Chuan Bi in the initial email about this data
 tdata = np.linspace(t_increment_brain, (n_elements_brain)*(t_increment_brain), n_elements_brain)
 
 #This is how we will keep track of all voxels that are called
-target_iterator = np.array([item for item in itertools.product(np.arange(0,n_hori,1), np.arange(0,n_vert,1))])
+target_iterator = np.array([item for item in itertools.product(np.arange(0,n_vert,1), np.arange(0,n_hori,1))])
 
 #NESMA Filter parameters
 txy = 3
@@ -82,10 +85,18 @@ ms_upper_bound = [1,80,300]
 #Parameters for Building the Repository
 iterations = 1
 
-vert1 = 165             #60     #108
-vert2 = 180            #125     #116
-hori1 = 120            #100      #86
-hori2 = 180            #115      #93
+SNR_collect = np.zeros(iterations)
+
+if subsection:
+    vert1 = 37
+    vert2 = 47
+    hori1 = 25
+    hori2 = 70
+else:
+    vert1 = 165             #60     #108
+    vert2 = 180            #125     #116
+    hori1 = 120            #100      #86
+    hori2 = 180            #115      #93
 
 vBox = (vert1,vert1,vert2,vert2,vert1)
 hBox = (hori1,hori2,hori2,hori1,hori1)
@@ -98,7 +109,11 @@ day = date.strftime('%d')
 month = date.strftime('%B')[0:3]
 year = date.strftime('%y')
 
-seriesTag = ("trial_" + day + month + year)
+# seriesTag = (f"SNR_{SNR_goal}_subsection_" + day + month + year)
+seriesTag = (f"NoNoise_subsection_" + day + month + year)
+
+seriesFolder = (os.getcwd() + '/ExperimentalSets/' + seriesTag)
+os.mkdir(seriesFolder)
 
 ############# Signal Functions ##############
 
@@ -122,58 +137,40 @@ def G_tilde(lam, SA = 1, offSet = estimate_offset):
 
 ############# Data Processing Functions ##############
 
-def NESMA_filtering_3D(raw,txy,thresh,verbose=False):
-    #Inputs:
-    # raw    : 3D (x,y,MS) raw/noisy volume. x,y are the spatial coordinates, while MS is the multispectral dimension
-    # txy    : Defines the size, (2*txy+1)-by-(2*txy+1) in voxels, of the search window in the x-y plane.
-    # thresh : 100%-thresh defines the similarity threshold (%). Values between 1% to 10% are recommended.
-
-    # Output:
-    # S_NESMA: 3D (x,y,MS) NESMA-filtered volume
-    
-    (m,n,o) = raw.shape
-    S_NESMA = np.zeros((m,n,o))
-    
-    for j in trange(n):
-        if verbose==True and j%50==0:
-            print('NESMA filtering ... Slice #', j, 'of', n)
-        for i in range(m):
-            rmin=max(i-txy,0)
-            rmax=min(i+txy,m)
-                    
-            smin=max(j-txy,0)
-            smax=min(j+txy,n)
-                    
-            L = (rmax-rmin)*(smax-smin)
-        
-            rawi = np.reshape(raw[rmin:rmax,smin:smax,:],(L,o)) #GSH - Different than the 4D version but seems appropriate
-            x=raw[i,j,:]
-            
-            if x[0] != 0:
-                D = 100*np.sum(abs(rawi-x),axis=1)/np.sum(x) #This is the Relative Manhattan distance between voxel intensities
-                pos = D<thresh
-                    
-                S_NESMA[i,j,:] = np.mean(rawi[pos==True,:], axis=0)
-    
-    return S_NESMA
-
 def mask_data(raw, mask_amplitude):
     #Sets every decay curve in the data set where the amplitude is less than a threshold value to zero
     I_masked = np.copy(raw)
     I_masked[I_masked[:,:,0]<mask_amplitude] = 0
     return I_masked
 
+def calculate_brain_SNR(raw, region):
+    #calculates the SNR of the brain using a homogenous region fed into the 
+    v1,v2,h1,h2 = region
+
+    rawZone = raw[v1:v2,h1:h2,:]
+
+    regionZero = rawZone[:, :, 0]
+    regionZero_mean = np.mean(regionZero)
+
+    regionEnd = rawZone[:, :, -3:] #last three points across the entire sampled region
+    regionEnd_std = np.std(regionEnd)
+    regionEnd_absMean = np.mean(np.abs(regionEnd))
+
+    SNR_region = (regionZero_mean - regionEnd_absMean)/regionEnd_std
+
+    return SNR_region
+
 def normalize_brain(I_data):
-    n_hori, n_vert, n_elem = I_data.shape
+    n_vert, n_hori, n_elem = I_data.shape
     I_normalized = np.zeros(I_data.shape)
-    for i_hori in trange(n_hori):
-        for i_vert in range(n_vert):
-            data = I_data[i_hori,i_vert,:]
+    for i_vert in range(n_hori):
+        for i_hori in range(n_vert):
+            data = I_data[i_vert,i_hori,:]
             if data[0]>0:
                 data_normalized = data/(data[0]) #GSH - normalizing by double the maximum/initial signal
             else:
                 data_normalized = np.zeros(n_elements_brain)
-            I_normalized[i_hori,i_vert,:] = data_normalized
+            I_normalized[i_vert,i_hori,:] = data_normalized
     return I_normalized
 
 def add_noise_brain_uniform(raw, SNR_desired, region, I_mask_factor):
@@ -254,26 +251,32 @@ def estimate_parameters(data, lam, n_initials = num_multistarts):
         
     popt = check_param_order(best_popt)
 
-    if post_normalize:
-        ci_sum = popt[0] + popt[1]
-        popt[0] = popt[0]/ci_sum
-        popt[1] = popt[1]/ci_sum
+    # if post_normalize:
+    #     ci_sum = popt[0] + popt[1]
+    #     popt[0] = popt[0]/ci_sum
+    #     popt[1] = popt[1]/ci_sum
  
     return popt, RSS_hold
 
 def generate_all_estimates(i_voxel, brain_data_3D):
     #Generates a comprehensive matrix of all parameter estimates for all param combinations, 
     #noise realizations, SNR values, and lambdas of interest
-    i_hori, i_vert = target_iterator[i_voxel]
-    noise_data = brain_data_3D[i_hori, i_vert, :]
+    i_vert, i_hori = target_iterator[i_voxel]
+    noise_data = brain_data_3D[i_vert, i_hori, :]
     e_lis = []
 
     for iLam in range(len(lambdas)):    #Loop through all lambda values
         e_df = pd.DataFrame(columns = ["Data", "Indices", "Estimates", "RSS"])
         lam = lambdas[iLam]
-        param_estimates, RSS_estimate = estimate_parameters(noise_data, lam)
+
+        if np.all(noise_data == 0):
+            param_estimates = [0,0,0,0]
+            RSS_estimate = 0
+        else:
+            param_estimates, RSS_estimate = estimate_parameters(noise_data, lam)
+        
         e_df["Data"] = [noise_data]
-        e_df["Indices"] = [[i_hori, i_vert]]
+        e_df["Indices"] = [[i_vert, i_hori]]
         e_df["Estimates"] = [param_estimates]
         e_df["RSS"] = [RSS_estimate]
         e_lis.append(e_df)
@@ -281,17 +284,26 @@ def generate_all_estimates(i_voxel, brain_data_3D):
     return pd.concat(e_lis, ignore_index= True)
 
 #### This ensures that the same mask is applied throughout
+
 if add_mask:
     I_masked = mask_data(I_raw, mask_amplitude)
     I_mask_factor = (I_masked!=0)
+else:
+    I_masked = I_raw
+
+#### Looping through Iterations of the brain - applying parallel processing to improve the speed
 
 for iter in range(iterations):    #Build {iterations} number of noisey brain realizations
 
     np.random.seed(iter)
 
-    # I_filtered = NESMA_filtering_3D(I_masked, txy, thresh)
-    I_noised = add_noise_brain_uniform(I_masked, SNR_goal, noiseRegion, I_mask_factor)[0]
+    if add_noise:
+        I_noised = add_noise_brain_uniform(I_masked, SNR_goal, noiseRegion, I_mask_factor)[0]
+    else:
+        I_noised = I_masked
     noise_iteration = normalize_brain(I_noised)
+
+    SNR_collect[iter] = calculate_brain_SNR(noise_iteration, noiseRegion)
 
     if __name__ == '__main__':
         freeze_support()
@@ -301,7 +313,7 @@ for iter in range(iterations):    #Build {iterations} number of noisey brain rea
         num_cpus_avail = 80
         print("Using Super Computer")
 
-        print(f"Building {iter} Dataset...")
+        print(f"Building {iter+1} Dataset of {iterations}...")
         lis = []
 
         with mp.Pool(processes = num_cpus_avail) as pool:
@@ -318,10 +330,10 @@ for iter in range(iterations):    #Build {iterations} number of noisey brain rea
             pool.close() #figure out how to implement
             pool.join()
 
-        print(len(lis)) #should be target_iterator.shape[0]
+        print(f"Completed {len(lis)} of {target_iterator.shape[0]} voxels") #should be target_iterator.shape[0]
         df = pd.concat(lis, ignore_index= True)
 
-        df.to_feather(f'ExperimentalSets//brainData_' + seriesTag + f'_iteration_{iter}.feather')           
+        df.to_feather(seriesFolder + f'/brainData_' + seriesTag + f'_iteration_{iter}.feather')           
 
 ############## Save General Code Code ################
 
@@ -338,9 +350,12 @@ hprParams = {
     'mask_amp': mask_amplitude,
     'ms_upBound': ms_upper_bound,
     'n_horizontal': n_hori,
-    'n_verticle': n_vert
+    'n_verticle': n_vert,
+    'options': [add_noise, add_mask, apply_normalizer, 
+                estimate_offset, subsection],
+    'SNR_array': SNR_collect
 }
 
-f = open(f'ExperimentalSets//hprParameter_info_' + day + month + year +'.pkl','wb')
+f = open(seriesFolder + '/hprParameter_info_' + day + month + year +'.pkl','wb')
 pickle.dump(hprParams,f)
 f.close()
