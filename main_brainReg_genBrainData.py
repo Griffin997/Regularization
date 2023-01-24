@@ -34,7 +34,7 @@ add_noise = False            #Add noise to the data beyond what is there natural
 add_mask = True             #Add a mask to the data - this mask eliminates data below a threshold (mas_amplitude)
 apply_normalizer = True     #Normalizes the data during the processing step
 estimate_offset = True      #Adds an offset to the signal that is estimated
-subsection = True           #Looks at a region a sixteenth of the full size
+subsection = False           #Looks at a region a sixteenth of the full size
 
 ############## Initializing Data ##########
 
@@ -109,8 +109,8 @@ day = date.strftime('%d')
 month = date.strftime('%B')[0:3]
 year = date.strftime('%y')
 
-# seriesTag = (f"SNR_{SNR_goal}_subsection_" + day + month + year)
-seriesTag = (f"NoNoise_subsection_" + day + month + year)
+# seriesTag = (f"SNR_{SNR_goal}_" + day + month + year)
+seriesTag = (f"NoNoise_" + day + month + year)
 
 seriesFolder = (os.getcwd() + '/ExperimentalSets/' + seriesTag)
 os.mkdir(seriesFolder)
