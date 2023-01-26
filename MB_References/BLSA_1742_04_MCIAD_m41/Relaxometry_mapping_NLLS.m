@@ -45,19 +45,20 @@ figure;
 subplot(131);imagesc(MWF_NESMA(:,:,s),[0 0.4]);colormap jet; axis off;colorbar;title('MWF (n.u.)');
 subplot(132);imagesc(T2s_NESMA(:,:,s),[0 60]);colormap jet; axis off;colorbar;title('T2s (ms)');
 subplot(133);imagesc(T2l_NESMA(:,:,s),[0 140]);colormap jet; axis off;colorbar;title('T2l (ms)');
-sgtitle("NESMA Data - m41 - slice 5 (1-10)")
+sgtitle(strcat("NESMA Data - m41 - slice ", string(s), " (1-10)"))
 
 figure;
 subplot(131);imagesc(MWF_raw(:,:,s),[0 0.4]);colormap jet; axis off;colorbar;title('MWF (n.u.)');
 subplot(132);imagesc(T2s_raw(:,:,s),[0 60]);colormap jet; axis off;colorbar;title('T2s (ms)');
 subplot(133);imagesc(T2l_raw(:,:,s),[0 140]);colormap jet; axis off;colorbar;title('T2l (ms)');
-sgtitle("Raw Data - m41 - slice 5 (1-10)")
+sgtitle(strcat("Raw Data - m41 - slice ", string(s), " (1-10)"))
 
 %% 
 
 m41_data = struct();
 m41_data.raw.T2l = T2l_raw;
-m41_data.raw.T2s = T2s_raw;m41_data.raw.MWF = MWF_raw;
+m41_data.raw.T2s = T2s_raw;
+m41_data.raw.MWF = MWF_raw;
 
 m41_data.NESMA.T2l = T2l_NESMA;
 m41_data.NESMA.T2s = T2s_NESMA;
