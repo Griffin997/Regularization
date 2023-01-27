@@ -20,6 +20,7 @@ options=optimset('Display','off');
 for k=1:dim3
     disp(['NLLS ... Slice # ' num2str(k) ' of '  num2str(dim3)]);
     for i=1:dim1
+        rng(i)
         for j=1:dim2
             if I4D_NESMA(i,j,k,1)>50
                 y_NESMA(:,1)=I4D_NESMA(i,j,k,:);
