@@ -30,15 +30,20 @@ import functools
 
 ############# Data Set Options & Hyperparameters ############
 
-add_noise = False            #Add noise to the data beyond what is there naturally
+add_noise = True            #Add noise to the data beyond what is there naturally
 add_mask = True             #Add a mask to the data - this mask eliminates data below a threshold (mas_amplitude)
 apply_normalizer = True     #Normalizes the data during the processing step
 estimate_offset = True      #Adds an offset to the signal that is estimated
 subsection = False           #Looks at a region a sixteenth of the full size
+multistart_method = False    #Applies a multistart method for each parameter fitting instance
+MB_model = False             #This model incoroporates the normalization and offset to a three parameter fit
+
+# The MB_model does the normalization as part of the algorithm
+if MB_model: assert(not apply_normalizer and not estimate_offset)
 
 ############## Initializing Data ##########
 
-brain_data = scipy.io.loadmat(os.getcwd() + '/MB_References/BLSA_1742_04_MCIAD_m41/rS_slice5.mat')
+brain_data = scipy.io.loadmat(os.getcwd() + '/MB_References/BLSA_1742_04_MCIAD_m41/NESMA_slice5.mat')
 I_raw = brain_data['slice_oi']
 
 if subsection:
@@ -59,18 +64,21 @@ txy = 3
 # tz = 5  #unused in the 2D scans in this code
 thresh = 5
 # all pixels with a lower mask amplitude are considered to be free water (i.e. vesicles)
-mask_amplitude = 600
+mask_amplitude = 700
 
 ############# Global Params ###############
 
 #These bounds were chosen to match the simulated data while also being restrictive enough
 #This provides a little extra space as the hard bounds would be [1,1,50,300]
-upper_bound = [2,2,100,300]
+if MB_model:
+    upper_bound = [np.inf, 0.5, 60, 2000]
+else:
+    upper_bound = [1,1,60,2000]
 
 SNR_goal = 40
 
 #This is incorporated into the estimate_NLLS funtionas of 1/16/22
-if estimate_offset:
+if estimate_offset or MB_model:
     upper_bound.append(np.inf)
 
 lambdas = np.append(0, np.logspace(-7,1,51))
@@ -78,12 +86,15 @@ lambdas = np.append(0, np.logspace(-7,1,51))
 ob_weight = 100
 agg_weights = np.array([1, 1, 1/ob_weight, 1/ob_weight])
 
-num_multistarts = 10
+if multistart_method:
+    num_nultistarts = 10
+else:
+    num_multistarts = 1
 
-ms_upper_bound = [1,80,300]  
+ms_upper_bound = [1,60,300]  
 
 #Parameters for Building the Repository
-iterations = 1
+iterations = 10
 
 SNR_collect = np.zeros(iterations)
 
@@ -109,11 +120,11 @@ day = date.strftime('%d')
 month = date.strftime('%B')[0:3]
 year = date.strftime('%y')
 
-# seriesTag = (f"SNR_{SNR_goal}_" + day + month + year)
-seriesTag = (f"NoNoise_" + day + month + year)
+seriesTag = (f"SNR_{SNR_goal}_" + day + month + year)
+# seriesTag = (f"NoNoise_" + day + month + year)
 
 seriesFolder = (os.getcwd() + '/ExperimentalSets/' + seriesTag)
-os.mkdir(seriesFolder)
+os.makedirs(seriesFolder, exist_ok = True)
 
 ############# Signal Functions ##############
 
@@ -125,11 +136,18 @@ def G_off(t, con_1, con_2, tau_1, tau_2, offSet):
     function = con_1*np.exp(-t/tau_1) + con_2*np.exp(-t/tau_2) + offSet
     return function
 
-def G_tilde(lam, SA = 1, offSet = estimate_offset):
+def G_MB(t, amp, con_1, tau_1, tau_2, offSet):
+    function = amp*(con_1*np.exp(-t/tau_1) + (1-con_1)*np.exp(-t/tau_2)) + offSet
+    return function
+
+def G_tilde(lam, SA = 1, offSet = estimate_offset, opt_MB = MB_model):
     #SA defines the signal amplitude, defaults to 1 for simulated data
     if offSet:
         def Gt_lam(t, con1, con2, tau1, tau2, oS):
             return np.append(G_off(t, con1, con2, tau1, tau2, oS), [lam*con1/SA, lam*con2/SA, lam*tau1/ob_weight, lam*tau2/ob_weight])
+    elif opt_MB:
+        def Gt_lam(t, amp, con1, tau1, tau2, oS):
+            return np.append(G_MB(t, amp, con1, tau1, tau2, oS), [lam*con1/SA, lam*tau1/ob_weight, lam*tau2/ob_weight])
     else:
         def Gt_lam(t, con1, con2, tau1, tau2):
             return np.append(G(t, con1, con2, tau1, tau2), [lam*con1/SA, lam*con2/SA, lam*tau1/ob_weight, lam*tau2/ob_weight])
@@ -196,12 +214,19 @@ def add_noise_brain_uniform(raw, SNR_desired, region, I_mask_factor):
 
 ################## Parameter Estimation Functions ###############
 
-def generate_p0(ms_ub = ms_upper_bound, offSet = estimate_offset):
-    three_params = np.random.uniform(0,1,3)*ms_ub
-    init_params = (three_params[0], 1-three_params[0], three_params[1], three_params[2])
+def generate_p0(ms_ub = ms_upper_bound, offSet = estimate_offset, ms_opt = multistart_method):
+    
+    if ms_opt:
+        init_params = (0.2, 0.8, 20, 80)
+    elif MB_model:
+        init_params = (0.2, 20, 80, 1)
+    else:
+        three_params = np.random.uniform(0,1,3)*ms_ub
+        init_params = (three_params[0], 1-three_params[0], three_params[1], three_params[2])
 
     if offSet:
         init_params = init_params + (0.2,) #Initialize the noise floor pretty low
+
     return init_params
 
 def check_param_order(popt):
@@ -216,12 +241,19 @@ def check_param_order(popt):
 
 def estimate_parameters(data, lam, n_initials = num_multistarts):
     #Pick n_initials random initial conditions within the bound, and choose the one giving the lowest model-data mismatch residual
-    data_tilde = np.append(data, [0,0,0,0]) # Adds zeros to the end of the regularization array for the param estimation
+    if MB_model:
+        parameter_tail = [0,0,0]
+    else:
+        parameter_tail = [0,0,0,0]
+    data_tilde = np.append(data, parameter_tail) # Adds zeros to the end of the regularization array for the param estimation
     
     RSS_hold = np.inf
     for i in range(n_initials):
         np.random.seed(i)
         init_params = generate_p0()
+        if MB_model:
+            #This ensures that the initial value for the amplitude should be close to maximum signal
+            init_params = (data_tilde[0],) + init_params
 
         # up_bnd = list(upper_bound*np.array([data_start, data_start, 1, 1]))
         up_bnd = upper_bound
@@ -229,31 +261,34 @@ def estimate_parameters(data, lam, n_initials = num_multistarts):
         try:
             popt, _ = curve_fit(
             G_tilde(lam), tdata, data_tilde, bounds = ([0,0,0,0,0], upper_bound), p0=init_params, max_nfev = 4000)
-        except:
-            if estimate_offset:
+        except Exception as error:
+            if estimate_offset or MB_model:
                 popt = [0,0,1,1,0]
             else:
                 popt = [0,0,1,1]
-            print("Max feval reached")
+            print("Error in parameter fitting: " + str(error))
 
         if estimate_offset:
             est_curve = G_off(tdata,*popt)
+        elif MB_model:
+            est_curve = G_MB(tdata,*popt)
         else:
             est_curve = G(tdata,*popt)
 
         RSS_temp = np.sum((est_curve - data)**2)
-        RSS_pTemp = lam*agg_weights*popt[0:4]
+        if MB_model:
+            RSS_pTemp = lam*agg_weights[1:4]*popt[1:4] #Accounting for the three parameter fit
+        else:
+            RSS_pTemp = lam*agg_weights*popt[0:4]
         RSS_temp = RSS_temp + np.linalg.norm(RSS_pTemp)
         if RSS_temp < RSS_hold:
             best_popt = popt[0:4]
             RSS_hold = RSS_temp
         
-    popt = check_param_order(best_popt)
-
-    # if post_normalize:
-    #     ci_sum = popt[0] + popt[1]
-    #     popt[0] = popt[0]/ci_sum
-    #     popt[1] = popt[1]/ci_sum
+    if not MB_model:
+        popt = check_param_order(best_popt)
+    else:
+        popt = best_popt
  
     return popt, RSS_hold
 
@@ -301,7 +336,11 @@ for iter in range(iterations):    #Build {iterations} number of noisey brain rea
         I_noised = add_noise_brain_uniform(I_masked, SNR_goal, noiseRegion, I_mask_factor)[0]
     else:
         I_noised = I_masked
-    noise_iteration = normalize_brain(I_noised)
+
+    if apply_normalizer:
+        noise_iteration = normalize_brain(I_noised)
+    else:
+        noise_iteration = I_noised
 
     SNR_collect[iter] = calculate_brain_SNR(noise_iteration, noiseRegion)
 
@@ -320,14 +359,12 @@ for iter in range(iterations):    #Build {iterations} number of noisey brain rea
 
             with tqdm(total=target_iterator.shape[0]) as pbar:
                 for estimates_dataframe in pool.imap_unordered(lambda hold_label: generate_all_estimates(hold_label, noise_iteration), range(target_iterator.shape[0])):
-                    # if k == 0:
-                        # print("Starting...")
 
                     lis.append(estimates_dataframe)
 
                     pbar.update()
 
-            pool.close() #figure out how to implement
+            pool.close()
             pool.join()
 
         print(f"Completed {len(lis)} of {target_iterator.shape[0]} voxels") #should be target_iterator.shape[0]
@@ -335,7 +372,7 @@ for iter in range(iterations):    #Build {iterations} number of noisey brain rea
 
         df.to_feather(seriesFolder + f'/brainData_' + seriesTag + f'_iteration_{iter}.feather')           
 
-############## Save General Code Code ################
+############## Save General Code ################
 
 hprParams = {
     "SNR_goal": SNR_goal,
@@ -352,7 +389,7 @@ hprParams = {
     'n_horizontal': n_hori,
     'n_verticle': n_vert,
     'options': [add_noise, add_mask, apply_normalizer, 
-                estimate_offset, subsection],
+                estimate_offset, subsection, multistart_method, MB_model],
     'SNR_array': SNR_collect
 }
 
