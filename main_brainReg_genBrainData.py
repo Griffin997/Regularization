@@ -34,7 +34,7 @@ add_noise = True            #Add noise to the data beyond what is there naturall
 add_mask = True             #Add a mask to the data - this mask eliminates data below a threshold (mas_amplitude)
 apply_normalizer = True     #Normalizes the data during the processing step
 estimate_offset = True      #Adds an offset to the signal that is estimated
-subsection = False           #Looks at a region a sixteenth of the full size
+subsection = True           #Looks at a region a sixteenth of the full size
 multistart_method = False    #Applies a multistart method for each parameter fitting instance
 MB_model = False             #This model incoroporates the normalization and offset to a three parameter fit
 
@@ -75,7 +75,7 @@ if MB_model:
 else:
     upper_bound = [1,1,60,2000]
 
-SNR_goal = 40
+SNR_goal = 60
 
 #This is incorporated into the estimate_NLLS funtionas of 1/16/22
 if estimate_offset or MB_model:
@@ -94,7 +94,7 @@ else:
 ms_upper_bound = [1,60,300]  
 
 #Parameters for Building the Repository
-iterations = 10
+iterations = 4
 
 SNR_collect = np.zeros(iterations)
 
@@ -120,8 +120,8 @@ day = date.strftime('%d')
 month = date.strftime('%B')[0:3]
 year = date.strftime('%y')
 
-seriesTag = (f"SNR_{SNR_goal}_" + day + month + year)
-# seriesTag = (f"NoNoise_" + day + month + year)
+seriesTag = (f"SNR_{SNR_goal}_subsection_" + day + month + year)
+# seriesTag = (f"NoNoise_subsection_" + day + month + year)
 
 seriesFolder = (os.getcwd() + '/ExperimentalSets/' + seriesTag)
 os.makedirs(seriesFolder, exist_ok = True)
