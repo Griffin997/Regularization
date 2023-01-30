@@ -30,7 +30,7 @@ import functools
 
 ############# Data Set Options & Hyperparameters ############
 
-add_noise = True            #Add noise to the data beyond what is there naturally
+add_noise = True           #Add noise to the data beyond what is there naturally
 add_mask = True             #Add a mask to the data - this mask eliminates data below a threshold (mas_amplitude)
 apply_normalizer = True     #Normalizes the data during the processing step
 estimate_offset = True      #Adds an offset to the signal that is estimated
@@ -73,15 +73,17 @@ mask_amplitude = 700
 if MB_model:
     upper_bound = [np.inf, 0.5, 60, 2000]
 else:
-    upper_bound = [1,1,60,2000]
+    upper_bound = [0.5,1,60,300]
 
-SNR_goal = 60
+SNR_goal = 150
 
 #This is incorporated into the estimate_NLLS funtionas of 1/16/22
 if estimate_offset or MB_model:
     upper_bound.append(np.inf)
 
-lambdas = np.append(0, np.logspace(-7,1,51))
+n_lambdas = 101
+
+lambdas = np.append(0, np.logspace(-5,1, n_lambdas))
 
 ob_weight = 100
 agg_weights = np.array([1, 1, 1/ob_weight, 1/ob_weight])
@@ -94,7 +96,10 @@ else:
 ms_upper_bound = [1,60,300]  
 
 #Parameters for Building the Repository
-iterations = 4
+if add_noise:
+    iterations = 5
+else:
+    iterations = 1
 
 SNR_collect = np.zeros(iterations)
 
@@ -120,8 +125,22 @@ day = date.strftime('%d')
 month = date.strftime('%B')[0:3]
 year = date.strftime('%y')
 
-seriesTag = (f"SNR_{SNR_goal}_subsection_" + day + month + year)
-# seriesTag = (f"NoNoise_subsection_" + day + month + year)
+seriesTag = ""
+if add_noise:
+    seriesTag = (seriesTag + f"SNR_{SNR_goal}_")
+else:
+    seriesTag = (seriesTag + f"NoNoise_")
+
+if subsection:
+    seriesTag = (seriesTag + f"subsection_")
+
+if upper_bound[0]==0.5:
+    seriesTag = (seriesTag + "halfC" + "_")
+
+if upper_bound[3]==300:
+    seriesTag = (seriesTag + "lowT22" + "_")
+
+seriesTag = (seriesTag + day + month + year)
 
 seriesFolder = (os.getcwd() + '/ExperimentalSets/' + seriesTag)
 os.makedirs(seriesFolder, exist_ok = True)
@@ -216,7 +235,7 @@ def add_noise_brain_uniform(raw, SNR_desired, region, I_mask_factor):
 
 def generate_p0(ms_ub = ms_upper_bound, offSet = estimate_offset, ms_opt = multistart_method):
     
-    if ms_opt:
+    if not ms_opt:
         init_params = (0.2, 0.8, 20, 80)
     elif MB_model:
         init_params = (0.2, 20, 80, 1)
