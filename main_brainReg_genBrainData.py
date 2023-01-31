@@ -30,7 +30,7 @@ import functools
 
 ############# Data Set Options & Hyperparameters ############
 
-add_noise = True           #Add noise to the data beyond what is there naturally
+add_noise = True          #Add noise to the data beyond what is there naturally
 add_mask = True             #Add a mask to the data - this mask eliminates data below a threshold (mas_amplitude)
 apply_normalizer = True     #Normalizes the data during the processing step
 estimate_offset = True      #Adds an offset to the signal that is estimated
@@ -75,7 +75,7 @@ if MB_model:
 else:
     upper_bound = [0.5,1,60,300]
 
-SNR_goal = 150
+SNR_goal = 25
 
 #This is incorporated into the estimate_NLLS funtionas of 1/16/22
 if estimate_offset or MB_model:
@@ -83,7 +83,7 @@ if estimate_offset or MB_model:
 
 n_lambdas = 101
 
-lambdas = np.append(0, np.logspace(-5,1, n_lambdas))
+lambdas = np.append(0, np.logspace(-5,3, n_lambdas))
 
 ob_weight = 100
 agg_weights = np.array([1, 1, 1/ob_weight, 1/ob_weight])
@@ -97,7 +97,7 @@ ms_upper_bound = [1,60,300]
 
 #Parameters for Building the Repository
 if add_noise:
-    iterations = 5
+    iterations = 2
 else:
     iterations = 1
 
@@ -139,6 +139,8 @@ if upper_bound[0]==0.5:
 
 if upper_bound[3]==300:
     seriesTag = (seriesTag + "lowT22" + "_")
+
+seriesTag = (seriesTag + "hiLam" + "_")
 
 seriesTag = (seriesTag + day + month + year)
 
@@ -324,7 +326,7 @@ def generate_all_estimates(i_voxel, brain_data_3D):
 
         if np.all(noise_data == 0):
             param_estimates = [0,0,1,1]
-            RSS_estimate = 0
+            RSS_estimate = np.inf
         else:
             param_estimates, RSS_estimate = estimate_parameters(noise_data, lam)
         
