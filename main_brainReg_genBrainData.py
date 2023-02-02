@@ -75,7 +75,7 @@ if MB_model:
 else:
     upper_bound = [0.5,1,60,300]
 
-SNR_goal = 25
+SNR_goal = 100
 
 #This is incorporated into the estimate_NLLS funtionas of 1/16/22
 if estimate_offset or MB_model:
@@ -83,7 +83,7 @@ if estimate_offset or MB_model:
 
 n_lambdas = 101
 
-lambdas = np.append(0, np.logspace(-5,3, n_lambdas))
+lambdas = np.append(0, np.logspace(-5,2, n_lambdas))
 
 ob_weight = 100
 agg_weights = np.array([1, 1, 1/ob_weight, 1/ob_weight])
@@ -97,7 +97,7 @@ ms_upper_bound = [1,60,300]
 
 #Parameters for Building the Repository
 if add_noise:
-    iterations = 2
+    iterations = 8
 else:
     iterations = 1
 
@@ -140,7 +140,11 @@ if upper_bound[0]==0.5:
 if upper_bound[3]==300:
     seriesTag = (seriesTag + "lowT22" + "_")
 
-seriesTag = (seriesTag + "hiLam" + "_")
+if not estimate_offset and not MB_model:
+    seriesTag = (seriesTag + "noOffSet" + "_")
+
+if lambdas[-1] == 100:
+    seriesTag = (seriesTag + "hiLam" + "_")
 
 seriesTag = (seriesTag + day + month + year)
 
@@ -206,7 +210,7 @@ def normalize_brain(I_data):
         for i_hori in range(n_vert):
             data = I_data[i_vert,i_hori,:]
             if data[0]>0:
-                data_normalized = data/(data[0]) #GSH - normalizing by double the maximum/initial signal
+                data_normalized = data/(data[0])
             else:
                 data_normalized = np.zeros(n_elements_brain)
             I_normalized[i_vert,i_hori,:] = data_normalized
@@ -269,19 +273,20 @@ def estimate_parameters(data, lam, n_initials = num_multistarts):
     data_tilde = np.append(data, parameter_tail) # Adds zeros to the end of the regularization array for the param estimation
     
     RSS_hold = np.inf
+    obj_hold = np.inf
     for i in range(n_initials):
         np.random.seed(i)
         init_params = generate_p0()
         if MB_model:
             #This ensures that the initial value for the amplitude should be close to maximum signal
             init_params = (data_tilde[0],) + init_params
-
-        # up_bnd = list(upper_bound*np.array([data_start, data_start, 1, 1]))
-        up_bnd = upper_bound
         
         try:
-            popt, _ = curve_fit(
-            G_tilde(lam), tdata, data_tilde, bounds = ([0,0,0,0,0], upper_bound), p0=init_params, max_nfev = 4000)
+            if estimate_offset or MB_model:
+                lower_bound = [0,0,0,0,0]
+            else:
+                lower_bound = [0,0,0,0]
+            popt, _ = curve_fit(G_tilde(lam), tdata, data_tilde, bounds = (lower_bound, upper_bound), p0=init_params, max_nfev = 4000)
         except Exception as error:
             if estimate_offset or MB_model:
                 popt = [0,0,1,1,0]
@@ -298,11 +303,12 @@ def estimate_parameters(data, lam, n_initials = num_multistarts):
 
         RSS_temp = np.sum((est_curve - data)**2)
         if MB_model:
-            RSS_pTemp = lam*agg_weights[1:4]*popt[1:4] #Accounting for the three parameter fit
+            obj_pTemp = lam*agg_weights[1:4]*popt[1:4] #Accounting for the three parameter fit
         else:
-            RSS_pTemp = lam*agg_weights*popt[0:4]
-        RSS_temp = RSS_temp + np.linalg.norm(RSS_pTemp)
-        if RSS_temp < RSS_hold:
+            obj_pTemp = lam*agg_weights*popt[0:4]
+        obj_temp = RSS_temp + np.linalg.norm(obj_pTemp)
+        if obj_temp < obj_hold:
+            obj_hold = obj_temp
             best_popt = popt[0:4]
             RSS_hold = RSS_temp
         
