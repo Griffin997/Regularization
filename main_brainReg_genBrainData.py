@@ -71,9 +71,9 @@ mask_amplitude = 700
 #These bounds were chosen to match the simulated data while also being restrictive enough
 #This provides a little extra space as the hard bounds would be [1,1,50,300]
 if MB_model:
-    upper_bound = [np.inf, 0.5, 60, 2000]
+    upper_bound = [np.inf, 1, 60, 2000] #c1 used to be 0.5 - changed to 1 for complete range
 else:
-    upper_bound = [0.5,1,60,300]
+    upper_bound = [np.inf,np.inf,60,300] #Removing normalization turns c1 and c2 into infinite upper bounds
 
 SNR_goal = 75
 
