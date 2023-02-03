@@ -75,7 +75,7 @@ if MB_model:
 else:
     upper_bound = [0.5,1,60,300]
 
-SNR_goal = 100
+SNR_goal = 75
 
 #This is incorporated into the estimate_NLLS funtionas of 1/16/22
 if estimate_offset or MB_model:
