@@ -21,7 +21,7 @@ for i=1:dim1
         if slice_oi(i,j,1)>50
             y_NESMA(:,1)=slice_oi(i,j,:);
             P0=[y_NESMA(1,1) 0.2 20 80 1];
-            Pi=lsqnonlin(@(P) fit_bi(P,y_NESMA,TE),P0,[0 0 0 0 0],[inf 0.5 60 2000 inf],options);
+            Pi=lsqnonlin(@(P) fit_bi(P,y_NESMA,TE),P0,[0 0 0 0 0],[inf 0.5 60 300 inf],options);
             MWF_slice(i,j)=Pi(2);
             T2s_slice(i,j)=Pi(3);
             T2l_slice(i,j)=Pi(4);
@@ -45,11 +45,11 @@ m41_data.slice.T2l = T2l_slice;
 m41_data.slice.T2s = T2s_slice;
 m41_data.slice.MWF = MWF_slice;
 
-save(strcat('m41_dataStruct_slice',string(s_num),'.mat'), '-struct', 'm41_data');
+save(strcat('m41_dataStruct_slice',string(s_num),'_iter2_300T22.mat'), '-struct', 'm41_data');
 
 %%
 
-load(strcat('m41_dataStruct_slice',string(s_num),'.mat'))
+load(strcat('m41_dataStruct_slice',string(s_num),'_iter2_300T22.mat'))
 T2l_slice = slice.T2l;
 T2s_slice = slice.T2s;
 MWF_slice = slice.MWF;
