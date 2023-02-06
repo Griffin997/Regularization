@@ -30,16 +30,27 @@ import functools
 
 ############# Data Set Options & Hyperparameters ############
 
-add_noise = True          #Add noise to the data beyond what is there naturally
+add_noise = False          #Add noise to the data beyond what is there naturally
 add_mask = True             #Add a mask to the data - this mask eliminates data below a threshold (mas_amplitude)
-apply_normalizer = True     #Normalizes the data during the processing step
+apply_normalizer = False     #Normalizes the data during the processing step
 estimate_offset = True      #Adds an offset to the signal that is estimated
 subsection = True           #Looks at a region a sixteenth of the full size
 multistart_method = False    #Applies a multistart method for each parameter fitting instance
-MB_model = False             #This model incoroporates the normalization and offset to a three parameter fit
+MB_model = False           #This model incoroporates the normalization and offset to a three parameter fit
 
 # The MB_model does the normalization as part of the algorithm
 if MB_model: assert(not apply_normalizer and not estimate_offset)
+
+############## Frequently Changed Parameters ###########
+
+n_lambdas = 101
+
+SNR_goal = 75
+
+if add_noise:
+    iterations = 1
+else:
+    iterations = 1
 
 ############## Initializing Data ##########
 
@@ -71,22 +82,22 @@ mask_amplitude = 700
 #These bounds were chosen to match the simulated data while also being restrictive enough
 #This provides a little extra space as the hard bounds would be [1,1,50,300]
 if MB_model:
-    upper_bound = [np.inf, 1, 60, 2000] #c1 used to be 0.5 - changed to 1 for complete range
+    upper_bound = [np.inf, 0.5, 60, 2000] #c1 used to be 0.5 - changed to 1 for complete range
+elif not apply_normalizer:
+    upper_bound = [np.inf,np.inf,60, 2000]
 else:
-    upper_bound = [np.inf,np.inf,60,300] #Removing normalization turns c1 and c2 into infinite upper bounds
+    upper_bound = [1,1,60,300]
 
-SNR_goal = 75
-
-#This is incorporated into the estimate_NLLS funtionas of 1/16/22
 if estimate_offset or MB_model:
     upper_bound.append(np.inf)
 
-n_lambdas = 101
+lambdas = np.append(0, np.logspace(-5,1, n_lambdas))
 
-lambdas = np.append(0, np.logspace(-5,2, n_lambdas))
-
-ob_weight = 100
-agg_weights = np.array([1, 1, 1/ob_weight, 1/ob_weight])
+ob_weight = 1
+if MB_model:
+    agg_weights = np.array([1/ob_weight, 1, 1/ob_weight, 1/ob_weight])
+else:
+    agg_weights = np.array([1, 1, 1/ob_weight, 1/ob_weight])
 
 if multistart_method:
     num_nultistarts = 10
@@ -94,12 +105,6 @@ else:
     num_multistarts = 1
 
 ms_upper_bound = [1,60,300]  
-
-#Parameters for Building the Repository
-if add_noise:
-    iterations = 8
-else:
-    iterations = 1
 
 SNR_collect = np.zeros(iterations)
 
@@ -137,14 +142,13 @@ if subsection:
 if upper_bound[0]==0.5:
     seriesTag = (seriesTag + "halfC" + "_")
 
-if upper_bound[3]==300:
-    seriesTag = (seriesTag + "lowT22" + "_")
-
 if not estimate_offset and not MB_model:
     seriesTag = (seriesTag + "noOffSet" + "_")
 
-if lambdas[-1] == 100:
-    seriesTag = (seriesTag + "hiLam" + "_")
+if not apply_normalizer and not MB_model:
+    seriesTag = (seriesTag + "NoNorm" + "_")
+
+seriesTag = (seriesTag + "2000T22" + "_")
 
 seriesTag = (seriesTag + day + month + year)
 
@@ -161,8 +165,8 @@ def G_off(t, con_1, con_2, tau_1, tau_2, offSet):
     function = con_1*np.exp(-t/tau_1) + con_2*np.exp(-t/tau_2) + offSet
     return function
 
-def G_MB(t, amp, con_1, tau_1, tau_2, offSet):
-    function = amp*(con_1*np.exp(-t/tau_1) + (1-con_1)*np.exp(-t/tau_2)) + offSet
+def G_MB(t, alpha, beta, tau_1, tau_2, offSet):
+    function = alpha*(beta*np.exp(-t/tau_1) + (1-beta)*np.exp(-t/tau_2)) + offSet
     return function
 
 def G_tilde(lam, SA = 1, offSet = estimate_offset, opt_MB = MB_model):
@@ -171,8 +175,8 @@ def G_tilde(lam, SA = 1, offSet = estimate_offset, opt_MB = MB_model):
         def Gt_lam(t, con1, con2, tau1, tau2, oS):
             return np.append(G_off(t, con1, con2, tau1, tau2, oS), [lam*con1/SA, lam*con2/SA, lam*tau1/ob_weight, lam*tau2/ob_weight])
     elif opt_MB:
-        def Gt_lam(t, amp, con1, tau1, tau2, oS):
-            return np.append(G_MB(t, amp, con1, tau1, tau2, oS), [lam*con1/SA, lam*tau1/ob_weight, lam*tau2/ob_weight])
+        def Gt_lam(t, alpha, beta, tau1, tau2, oS):
+            return np.append(G_MB(t, alpha, beta, tau1, tau2, oS), [lam*alpha/ob_weight, lam*beta/SA, lam*tau1/ob_weight, lam*tau2/ob_weight])
     else:
         def Gt_lam(t, con1, con2, tau1, tau2):
             return np.append(G(t, con1, con2, tau1, tau2), [lam*con1/SA, lam*con2/SA, lam*tau1/ob_weight, lam*tau2/ob_weight])
@@ -239,47 +243,50 @@ def add_noise_brain_uniform(raw, SNR_desired, region, I_mask_factor):
 
 ################## Parameter Estimation Functions ###############
 
-def generate_p0(ms_ub = ms_upper_bound, offSet = estimate_offset, ms_opt = multistart_method):
+def generate_p0(ms_ub = ms_upper_bound, offSet = estimate_offset, ms_opt = multistart_method, sig_init = 1):
     
-    if not ms_opt:
-        init_params = (0.2, 0.8, 20, 80)
-    elif MB_model:
-        init_params = (0.2, 20, 80, 1)
+    
+    if MB_model:
+        init_params = (sig_init, 0.2, 20, 80, 1)
+    elif not ms_opt:
+        init_params = (sig_init*0.2, sig_init*0.8, 20, 80, 1)
     else:
         three_params = np.random.uniform(0,1,3)*ms_ub
-        init_params = (three_params[0], 1-three_params[0], three_params[1], three_params[2])
+        init_params = (sig_init*three_params[0], sig_init*(1-three_params[0]), three_params[1], three_params[2], 1)
 
-    if offSet:
-        init_params = init_params + (0.2,) #Initialize the noise floor pretty low
+    if not offSet and not MB_model:
+        init_params = init_params[0:4] #cleave the 5th parameter
 
     return init_params
 
 def check_param_order(popt):
     #Function to automate the order of parameters if desired
     #Reshaping of array to ensure that the parameter pairs all end up in the appropriate place - ensures that T22 > T21
-    if (popt[-1] < popt[-2]): #We want by convention to make sure that T21 is <= T22
-        for pi in range(np.size(popt)//2):
-            p_hold = popt[2*pi]
-            popt[2*pi] = popt[2*pi+1]
-            popt[2*pi+1] = p_hold
+    if (popt[2] < popt[3]): #We want by convention to make sure that T21 is <= T22
+        p_hold = popt[0]
+        popt[0] = popt[1]
+        popt[1] = p_hold
+
+        p_hold = popt[2]
+        popt[2] = popt[3]
+        popt[3] = p_hold
     return popt
 
 def estimate_parameters(data, lam, n_initials = num_multistarts):
     #Pick n_initials random initial conditions within the bound, and choose the one giving the lowest model-data mismatch residual
-    if MB_model:
-        parameter_tail = [0,0,0]
-    else:
-        parameter_tail = [0,0,0,0]
+
+    parameter_tail = [0,0,0,0]
     data_tilde = np.append(data, parameter_tail) # Adds zeros to the end of the regularization array for the param estimation
     
     RSS_hold = np.inf
     obj_hold = np.inf
     for i in range(n_initials):
-        np.random.seed(i)
-        init_params = generate_p0()
-        if MB_model:
-            #This ensures that the initial value for the amplitude should be close to maximum signal
-            init_params = (data_tilde[0],) + init_params
+
+        np.random.seed(i) #Only has an effect on the multistart strategy
+        if MB_model or not apply_normalizer:
+            init_params = generate_p0(sig_init = data_tilde[0])
+        else:
+            init_params = generate_p0()
         
         try:
             if estimate_offset or MB_model:
@@ -300,16 +307,14 @@ def estimate_parameters(data, lam, n_initials = num_multistarts):
             est_curve = G_MB(tdata,*popt)
         else:
             est_curve = G(tdata,*popt)
-
         RSS_temp = np.sum((est_curve - data)**2)
-        if MB_model:
-            obj_pTemp = lam*agg_weights[1:4]*popt[1:4] #Accounting for the three parameter fit
-        else:
-            obj_pTemp = lam*agg_weights*popt[0:4]
+
+        obj_pTemp = lam*agg_weights*popt[0:4]
         obj_temp = RSS_temp + np.linalg.norm(obj_pTemp)
+
         if obj_temp < obj_hold:
             obj_hold = obj_temp
-            best_popt = popt[0:4]
+            best_popt = popt
             RSS_hold = RSS_temp
         
     if not MB_model:
@@ -331,7 +336,10 @@ def generate_all_estimates(i_voxel, brain_data_3D):
         lam = lambdas[iLam]
 
         if np.all(noise_data == 0):
-            param_estimates = [0,0,1,1]
+            if estimate_offset or MB_model:
+                param_estimates = [0,0,1,1,0]
+            else:
+                param_estimates = [0,0,1,1]
             RSS_estimate = np.inf
         else:
             param_estimates, RSS_estimate = estimate_parameters(noise_data, lam)
