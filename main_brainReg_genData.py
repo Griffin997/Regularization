@@ -36,7 +36,7 @@ with open('SimulationSets//standardNoise_' + noise_date_oi + '.pkl', 'rb') as ha
     noise_mat = np.array(noise_mat)
 handle.close()
 
-SNR_mat = [20, 50, 100, 500]
+SNR_mat = [200]
 n_elements = 128
 #Weighting term to ensure the c_i and T2_i are roughly the same magnitude
 ob_weight = 100
@@ -53,7 +53,7 @@ tdata = np.linspace(0, 635, n_elements)
 lambdas = np.append(0, np.logspace(-7,1,51))
 
 # Parameters Loop Through
-c1_set = [0.05, 0.95] #, 0.2, 0.4, 0.5, 0.6, 0.8, 1.0]
+c1_set = [0, 0.2, 0.4, 0.5, 0.6, 0.8, 1.0]
 c2_set = 1-np.array(c1_set)
 T21_set = [10,20,30,40,50]
 T22_set = [70,90,110,130,150]
