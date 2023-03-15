@@ -32,7 +32,7 @@ import functools
 
 add_noise = False          #Add noise to the data beyond what is there naturally
 add_mask = True             #Add a mask to the data - this mask eliminates data below a threshold (mas_amplitude)
-apply_normalizer = False     #Normalizes the data during the processing step
+apply_normalizer = True     #Normalizes the data during the processing step
 estimate_offset = True      #Adds an offset to the signal that is estimated
 subsection = True           #Looks at a region a sixteenth of the full size
 multistart_method = False    #Applies a multistart method for each parameter fitting instance
@@ -45,10 +45,10 @@ if MB_model: assert(not apply_normalizer and not estimate_offset)
 
 n_lambdas = 101
 
-SNR_goal = 75
+SNR_goal = 100
 
 if add_noise:
-    iterations = 1
+    iterations = 20
 else:
     iterations = 1
 
@@ -86,7 +86,7 @@ if MB_model:
 elif not apply_normalizer:
     upper_bound = [np.inf,np.inf,60, 2000]
 else:
-    upper_bound = [1,1,60,300]
+    upper_bound = [0.5,1,60,300]
 
 if estimate_offset or MB_model:
     upper_bound.append(np.inf)
@@ -148,7 +148,7 @@ if not estimate_offset and not MB_model:
 if not apply_normalizer and not MB_model:
     seriesTag = (seriesTag + "NoNorm" + "_")
 
-seriesTag = (seriesTag + "2000T22" + "_")
+# seriesTag = (seriesTag + "2000T22" + "_")
 
 seriesTag = (seriesTag + day + month + year)
 
