@@ -32,7 +32,7 @@ import functools
 
 add_noise = False          #Add noise to the data beyond what is there naturally
 add_mask = True             #Add a mask to the data - this mask eliminates data below a threshold (mas_amplitude)
-apply_normalizer = True     #Normalizes the data during the processing step
+apply_normalizer = False     #Normalizes the data during the processing step
 estimate_offset = True      #Adds an offset to the signal that is estimated
 subsection = True           #Looks at a region a sixteenth of the full size
 multistart_method = False    #Applies a multistart method for each parameter fitting instance
@@ -48,7 +48,7 @@ n_lambdas = 101
 SNR_goal = 100
 
 if add_noise:
-    iterations = 20
+    iterations = 2
 else:
     iterations = 1
 
@@ -86,7 +86,7 @@ if MB_model:
 elif not apply_normalizer:
     upper_bound = [np.inf,np.inf,60, 2000]
 else:
-    upper_bound = [0.5,1,60,300]
+    upper_bound = [0.5,1,60,2000]
 
 if estimate_offset or MB_model:
     upper_bound.append(np.inf)
@@ -96,15 +96,19 @@ lambdas = np.append(0, np.logspace(-5,1, n_lambdas))
 ob_weight = 1
 if MB_model:
     agg_weights = np.array([1/ob_weight, 1, 1/ob_weight, 1/ob_weight])
+if not apply_normalizer:
+    agg_weights = np.array([1,1,1,1])
 else:
     agg_weights = np.array([1, 1, 1/ob_weight, 1/ob_weight])
 
 if multistart_method:
     num_nultistarts = 10
+    ms_upper_bound = [1,60,300] 
 else:
     num_multistarts = 1
+    ms_upper_bound = [0] 
 
-ms_upper_bound = [1,60,300]  
+ 
 
 SNR_collect = np.zeros(iterations)
 
@@ -144,6 +148,9 @@ if upper_bound[0]==0.5:
 
 if not estimate_offset and not MB_model:
     seriesTag = (seriesTag + "noOffSet" + "_")
+
+if MB_model:
+    seriesTag = (seriesTag + "MBmod" + "_")
 
 if not apply_normalizer and not MB_model:
     seriesTag = (seriesTag + "NoNorm" + "_")
@@ -262,7 +269,7 @@ def generate_p0(ms_ub = ms_upper_bound, offSet = estimate_offset, ms_opt = multi
 def check_param_order(popt):
     #Function to automate the order of parameters if desired
     #Reshaping of array to ensure that the parameter pairs all end up in the appropriate place - ensures that T22 > T21
-    if (popt[2] < popt[3]): #We want by convention to make sure that T21 is <= T22
+    if (popt[2] > popt[3]): #We want by convention to make sure that T21 is <= T22
         p_hold = popt[0]
         popt[0] = popt[1]
         popt[1] = p_hold
