@@ -30,13 +30,13 @@ import functools
 
 ############# Data Set Options & Hyperparameters ############
 
-add_noise = False          #Add noise to the data beyond what is there naturally
+add_noise = True          #Add noise to the data beyond what is there naturally
 add_mask = True             #Add a mask to the data - this mask eliminates data below a threshold (mas_amplitude)
 apply_normalizer = False     #Normalizes the data during the processing step
 estimate_offset = True      #Adds an offset to the signal that is estimated
 subsection = True           #Looks at a region a sixteenth of the full size
 multistart_method = False    #Applies a multistart method for each parameter fitting instance
-MB_model = False           #This model incoroporates the normalization and offset to a three parameter fit
+MB_model = True           #This model incoroporates the normalization and offset to a three parameter fit
 
 # The MB_model does the normalization as part of the algorithm
 if MB_model: assert(not apply_normalizer and not estimate_offset)
@@ -48,7 +48,7 @@ n_lambdas = 101
 SNR_goal = 100
 
 if add_noise:
-    iterations = 2
+    iterations = 4
 else:
     iterations = 1
 
@@ -84,9 +84,9 @@ mask_amplitude = 700
 if MB_model:
     upper_bound = [np.inf, 0.5, 60, 2000] #c1 used to be 0.5 - changed to 1 for complete range
 elif not apply_normalizer:
-    upper_bound = [np.inf,np.inf,60, 2000]
+    upper_bound = [0.5,1.2,60,2000]
 else:
-    upper_bound = [0.5,1,60,2000]
+    upper_bound = [0.5,1.2,60,2000]
 
 if estimate_offset or MB_model:
     upper_bound.append(np.inf)
@@ -294,13 +294,18 @@ def estimate_parameters(data, lam, n_initials = num_multistarts):
             init_params = generate_p0(sig_init = data_tilde[0])
         else:
             init_params = generate_p0()
+
+        temp_upper_bound = np.copy(upper_bound)
+        if not apply_normalizer and not MB_model:
+            temp_upper_bound[0] = data_tilde[0]*upper_bound[0]
+            temp_upper_bound[1] = data_tilde[0]*upper_bound[1]
         
         try:
             if estimate_offset or MB_model:
                 lower_bound = [0,0,0,0,0]
             else:
                 lower_bound = [0,0,0,0]
-            popt, _ = curve_fit(G_tilde(lam), tdata, data_tilde, bounds = (lower_bound, upper_bound), p0=init_params, max_nfev = 4000)
+            popt, _ = curve_fit(G_tilde(lam), tdata, data_tilde, bounds = (lower_bound, temp_upper_bound), p0=init_params, max_nfev = 4000)
         except Exception as error:
             if estimate_offset or MB_model:
                 popt = [0,0,1,1,0]
