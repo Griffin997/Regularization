@@ -32,7 +32,7 @@ import functools
 
 add_noise = True          #Add noise to the data beyond what is there naturally
 add_mask = True             #Add a mask to the data - this mask eliminates data below a threshold (mas_amplitude)
-apply_normalizer = True     #Normalizes the data during the processing step
+apply_normalizer = False     #Normalizes the data during the processing step
 estimate_offset = True      #Adds an offset to the signal that is estimated
 subsection = True           #Looks at a region a sixteenth of the full size
 multistart_method = False    #Applies a multistart method for each parameter fitting instance
