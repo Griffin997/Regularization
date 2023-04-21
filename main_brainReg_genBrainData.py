@@ -32,9 +32,9 @@ import functools
 
 add_noise = True          #Add noise to the data beyond what is there naturally
 add_mask = True             #Add a mask to the data - this mask eliminates data below a threshold (mas_amplitude)
-apply_normalizer = False     #Normalizes the data during the processing step
+apply_normalizer = True     #Normalizes the data during the processing step
 estimate_offset = True      #Adds an offset to the signal that is estimated
-subsection = True           #Looks at a region a sixteenth of the full size
+subsection = False           #Looks at a region a sixteenth of the full size
 multistart_method = False    #Applies a multistart method for each parameter fitting instance
 MB_model = False           #This model incoroporates the normalization and offset to a three parameter fit
 
@@ -48,7 +48,7 @@ n_lambdas = 101
 SNR_goal = 100
 
 if add_noise:
-    iterations = 15
+    iterations = 20
 else:
     iterations = 1
 
@@ -84,16 +84,16 @@ mask_amplitude = 700
 if MB_model:
     upper_bound = [np.inf, 0.5, 60, 2000] #c1 used to be 0.5 - changed to 1 for complete range
 elif not apply_normalizer:
-    upper_bound = [0.5,1.2,60,2000]
+    upper_bound = [0.5,1.2,60,300]
 else:
-    upper_bound = [0.5,1.2,60,2000]
+    upper_bound = [0.5,1.2,60,300]
 
 if estimate_offset or MB_model:
     upper_bound.append(np.inf)
 
 lambdas = np.append(0, np.logspace(-5,1, n_lambdas))
 
-ob_weight = 1
+ob_weight = 100
 if MB_model:
     agg_weights = np.array([1/ob_weight, 1, 1/ob_weight, 1/ob_weight])
 if not apply_normalizer:
@@ -429,6 +429,7 @@ hprParams = {
     "data_slice": "rS_slice5",
     'tdata': tdata,
     'ob_weight': ob_weight,
+    'agg_weights': agg_weights,
     'num_multistarts': num_multistarts,
     'upper_bound': upper_bound,
     'mask_amp': mask_amplitude,
