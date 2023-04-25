@@ -30,11 +30,12 @@ import functools
 
 ############# Data Set Options & Hyperparameters ############
 
+add_noise = True               #True for a standard reference and False for a noise set
 add_mask = True                #Add a mask to the data - this mask eliminates data below a threshold (mas_amplitude)
 apply_normalizer = True        #Normalizes the data during the processing step
 estimate_offset = True         #Adds an offset to the signal that is estimated
 subsection = False              #Looks at a region a sixteenth of the full size
-multistart_method = False       #Applies a multistart method for each parameter fitting instance
+rand_state = False              #Applies a multistart method for each parameter fitting instance
 MB_model = False                #This model incoroporates the normalization and offset to a three parameter fit
 model_selection = False         #Compares monoX and biX to be able to choose fit process
 model_select_nonstand = False   #Compares monoX and biX based on that individual scan as opposed to using the standard reference
@@ -50,9 +51,9 @@ n_lambdas = 101
 SNR_goal = 100
 
 if add_noise:
-    iterations = 20
-else:
     iterations = 1
+else:
+    iterations = 20
 
 ############## Initializing Data ##########
 
@@ -72,10 +73,6 @@ tdata = np.linspace(t_increment_brain, (n_elements_brain)*(t_increment_brain), n
 #This is how we will keep track of all voxels that are called
 target_iterator = np.array([item for item in itertools.product(np.arange(0,n_vert,1), np.arange(0,n_hori,1))])
 
-#NESMA Filter parameters
-txy = 3
-# tz = 5  #unused in the 2D scans in this code
-thresh = 5
 # all pixels with a lower mask amplitude are considered to be free water (i.e. vesicles)
 mask_amplitude = 700
 
@@ -252,33 +249,44 @@ def add_noise_brain_uniform(raw, SNR_desired, region, I_mask_factor):
 
 ################## Parameter Estimation Functions ###############
 
-def generate_p0(ms_ub = ms_upper_bound, offSet = estimate_offset, ms_opt = multistart_method, sig_init = 1):
-    
-    
-    if MB_model:
-        init_params = (sig_init, 0.2, 20, 80, 1)
-    elif not ms_opt:
-        init_params = (sig_init*0.2, sig_init*0.8, 20, 80, 1)
+def get_param_p0(function, sig_init = 1, rand_opt = rand_state):
+    f_name = function.__name__
+       
+    if 'biX' in f_name:
+        if rand_opt:
+            init_p0 = [sig_init*0.2, sig_init*0.8, 20, 80]
+        else:
+            init_p0 = [sig_init*0.2, sig_init*0.8, 20, 80]
+    elif 'moX' in f_name:
+        if rand_opt:
+            init_p0 = [sig_init*0.2, sig_init*0.8, 20, 80]
+        else:
+            init_p0 = [sig_init, 20]
     else:
-        three_params = np.random.uniform(0,1,3)*ms_ub
-        init_params = (sig_init*three_params[0], sig_init*(1-three_params[0]), three_params[1], three_params[2], 1)
+        raise Exception("Not a valid function: " + f_name)
+    
+    if 'off' in f_name:
+        init_p0.append(1)
 
-    if not offSet and not MB_model:
-        init_params = init_params[0:4] #cleave the 5th parameter
+    return init_p0
 
-    return init_params
-
-def check_param_order(popt):
+def check_param_order(popt, func):
     #Function to automate the order of parameters if desired
     #Reshaping of array to ensure that the parameter pairs all end up in the appropriate place - ensures that T22 > T21
-    if (popt[2] > popt[3]): #We want by convention to make sure that T21 is <= T22
-        p_hold = popt[0]
-        popt[0] = popt[1]
-        popt[1] = p_hold
+    
+    f_name = func.__name__
+    num = 0
+    if 'off' in f_name:
+        num = -1
 
-        p_hold = popt[2]
-        popt[2] = popt[3]
-        popt[3] = p_hold
+    if 'MB' in f_name:
+        return popt
+
+    if (popt[-2+num] > popt[-1+num]): #We want by convention to make sure that T21 is <= T22
+        for i in range(popt.shape[0]//2):
+            p_hold = popt[2*i]
+            popt[2*i] = popt[2*i+1]
+            popt[2*i+1] = p_hold
     return popt
 
 def estimate_parameters(data, lam, n_initials = num_multistarts):
@@ -293,9 +301,9 @@ def estimate_parameters(data, lam, n_initials = num_multistarts):
 
         np.random.seed(i) #Only has an effect on the multistart strategy
         if MB_model or not apply_normalizer:
-            init_params = generate_p0(sig_init = data_tilde[0])
+            init_params = get_param_p0(sig_init = data_tilde[0])
         else:
-            init_params = generate_p0()
+            init_params = get_param_p0()
 
         temp_upper_bound = np.copy(upper_bound)
         if not apply_normalizer and not MB_model:
@@ -339,6 +347,35 @@ def estimate_parameters(data, lam, n_initials = num_multistarts):
     return popt, RSS_hold
 
 def generate_all_estimates(i_voxel, brain_data_3D):
+    #Generates a comprehensive matrix of all parameter estimates for all param combinations, 
+    #noise realizations, SNR values, and lambdas of interest
+    i_vert, i_hori = target_iterator[i_voxel]
+    noise_data = brain_data_3D[i_vert, i_hori, :]
+    e_lis = []
+
+    for iLam in range(len(lambdas)):    #Loop through all lambda values
+        e_df = pd.DataFrame(columns = ["Data", "Indices", "Estimates", "RSS"])
+        lam = lambdas[iLam]
+
+        if np.all(noise_data == 0):
+            if estimate_offset or MB_model:
+                param_estimates = [0,0,1,1,0]
+            else:
+                param_estimates = [0,0,1,1]
+            RSS_estimate = np.inf
+        else:
+            param_estimates, RSS_estimate = estimate_parameters(noise_data, lam)
+        
+        assert(noise_data.shape[0] == n_elements_brain)
+        e_df["Data"] = [noise_data]
+        e_df["Indices"] = [[i_vert, i_hori]]
+        e_df["Estimates"] = [param_estimates]
+        e_df["RSS"] = [RSS_estimate]
+        e_lis.append(e_df)
+    
+    return pd.concat(e_lis, ignore_index= True)
+
+def judicial_estimation(i_voxel, brain_data_3D):
     #Generates a comprehensive matrix of all parameter estimates for all param combinations, 
     #noise realizations, SNR values, and lambdas of interest
     i_vert, i_hori = target_iterator[i_voxel]
@@ -439,7 +476,7 @@ hprParams = {
     'n_horizontal': n_hori,
     'n_verticle': n_vert,
     'options': [add_noise, add_mask, apply_normalizer, 
-                estimate_offset, subsection, multistart_method, MB_model],
+                estimate_offset, subsection, rand_state, MB_model],
     'SNR_array': SNR_collect
 }
 
