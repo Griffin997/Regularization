@@ -35,7 +35,7 @@ add_mask = True                #Add a mask to the data - this mask eliminates da
 apply_normalizer = True        #Normalizes the data during the processing step
 estimate_offset = True         #Adds an offset to the signal that is estimated
 subsection = False              #Looks at a region a sixteenth of the full size
-rand_state = False              #Applies a multistart method for each parameter fitting instance
+multistart_method = False       #Applies a multistart method for each parameter fitting instance
 MB_model = False                #This model incoroporates the normalization and offset to a three parameter fit
 model_selection = False         #Compares monoX and biX to be able to choose fit process
 model_select_nonstand = False   #Compares monoX and biX based on that individual scan as opposed to using the standard reference
@@ -74,7 +74,7 @@ tdata = np.linspace(t_increment_brain, (n_elements_brain)*(t_increment_brain), n
 target_iterator = np.array([item for item in itertools.product(np.arange(0,n_vert,1), np.arange(0,n_hori,1))])
 
 # all pixels with a lower mask amplitude are considered to be free water (i.e. vesicles)
-mask_amplitude = 700
+mask_amplitude = 700    #Might need to be greater
 
 ############# Global Params ###############
 
@@ -106,8 +106,6 @@ if multistart_method:
 else:
     num_multistarts = 1
     ms_upper_bound = [0] 
-
- 
 
 SNR_collect = np.zeros(iterations)
 
@@ -249,7 +247,7 @@ def add_noise_brain_uniform(raw, SNR_desired, region, I_mask_factor):
 
 ################## Parameter Estimation Functions ###############
 
-def get_param_p0(function, sig_init = 1, rand_opt = rand_state):
+def get_param_p0(function, sig_init = 1, rand_opt = multistart_method):
     f_name = function.__name__
        
     if 'biX' in f_name:
