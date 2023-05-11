@@ -30,7 +30,7 @@ import functools
 
 ############# Data Set Options & Hyperparameters ############
 
-add_noise = False          #Add noise to the data beyond what is there naturally
+add_noise = True          #Add noise to the data beyond what is there naturally
 add_mask = True             #Add a mask to the data - this mask eliminates data below a threshold (mas_amplitude)
 apply_normalizer = True     #Normalizes the data during the processing step
 estimate_offset = True      #Adds an offset to the signal that is estimated

@@ -33,7 +33,6 @@ import functools
 add_noise = True               #True for a standard reference and False for a noise set
 add_mask = True                #Add a mask to the data - this mask eliminates data below a threshold (mas_amplitude)
 apply_normalizer = True        #Normalizes the data during the processing step
-estimate_offset = True         #Adds an offset to the signal that is estimated
 subsection = False              #Looks at a region a sixteenth of the full size
 multistart_method = False       #Applies a multistart method for each parameter fitting instance
 MB_model = False                #This model incoroporates the normalization and offset to a three parameter fit
@@ -74,21 +73,18 @@ tdata = np.linspace(t_increment_brain, (n_elements_brain)*(t_increment_brain), n
 target_iterator = np.array([item for item in itertools.product(np.arange(0,n_vert,1), np.arange(0,n_hori,1))])
 
 # all pixels with a lower mask amplitude are considered to be free water (i.e. vesicles)
-mask_amplitude = 700    #Might need to be greater
+mask_amplitude = 750    #Might need to be greater
 
 ############# Global Params ###############
 
 #These bounds were chosen to match the simulated data while also being restrictive enough
 #This provides a little extra space as the hard bounds would be [1,1,50,300]
 if MB_model:
-    upper_bound = [np.inf, 0.5, 60, 2000] #c1 used to be 0.5 - changed to 1 for complete range
+    upper_bound = [np.inf, 0.5, 60, 2000, np.inf] #c1 used to be 0.5 - changed to 1 for complete range
 elif not apply_normalizer:
-    upper_bound = [0.5,1.2,60,300]
+    upper_bound = [0.5, 1.2, 60, 300, np.inf]
 else:
-    upper_bound = [0.5,1.2,60,300]
-
-if estimate_offset or MB_model:
-    upper_bound.append(np.inf)
+    upper_bound = [0.5, 1.2, 60, 300, np.inf]
 
 lambdas = np.append(0, np.logspace(-5,1, n_lambdas))
 
@@ -125,7 +121,8 @@ hBox = (hori1,hori2,hori2,hori1,hori1)
 
 noiseRegion = [vert1,vert2,hori1,hori2]
 
-# Important for Naming
+####### File Naming Section #########
+
 date = date.today()
 day = date.strftime('%d')
 month = date.strftime('%B')[0:3]
@@ -143,9 +140,6 @@ if subsection:
 if upper_bound[0]==0.5:
     seriesTag = (seriesTag + "halfC" + "_")
 
-if not estimate_offset and not MB_model:
-    seriesTag = (seriesTag + "noOffSet" + "_")
-
 if MB_model:
     seriesTag = (seriesTag + "MBmod" + "_")
 
@@ -161,29 +155,36 @@ os.makedirs(seriesFolder, exist_ok = True)
 
 ############# Signal Functions ##############
 
-def G(t, con_1, con_2, tau_1, tau_2): 
-    function = con_1*np.exp(-t/tau_1) + con_2*np.exp(-t/tau_2)
-    return function
+def G_biX_off(t, con_1, con_2, tau_1, tau_2, offSet): 
+    signal = con_1*np.exp(-t/tau_1) + con_2*np.exp(-t/tau_2) + offSet
+    return signal
 
-def G_off(t, con_1, con_2, tau_1, tau_2, offSet): 
-    function = con_1*np.exp(-t/tau_1) + con_2*np.exp(-t/tau_2) + offSet
-    return function
+def G_moX_off(t, con, tau, offSet): 
+    signal = con*np.exp(-t/tau) + offSet
+    return signal
 
 def G_MB(t, alpha, beta, tau_1, tau_2, offSet):
     function = alpha*(beta*np.exp(-t/tau_1) + (1-beta)*np.exp(-t/tau_2)) + offSet
     return function
 
-def G_tilde(lam, SA = 1, offSet = estimate_offset, opt_MB = MB_model):
-    #SA defines the signal amplitude, defaults to 1 for simulated data
-    if offSet:
-        def Gt_lam(t, con1, con2, tau1, tau2, oS):
-            return np.append(G_off(t, con1, con2, tau1, tau2, oS), [lam*con1/SA, lam*con2/SA, lam*tau1/ob_weight, lam*tau2/ob_weight])
-    elif opt_MB:
+def G_tilde(lam, func, SA = 1):
+    #SA defines the signal amplitude, defaults to 1 with normalized data
+    #Regularization is only applied to biexponential data
+    f_name = func.__name__
+    if 'biX' in f_name:
+        def Gt_lam(t, con_1, con_2, tau_1, tau_2, offSet):
+            param_stack = [lam*con_1/SA, lam*con_2/SA, lam*tau_1/ob_weight, lam*tau_2/ob_weight]
+            return np.append(G_biX_off(t, con_1, con_2, tau_1, tau_2, offSet), param_stack)
+    # elif 'moX' in f_name:
+    #     def Gt_lam(t, con,tau, offSet):
+    #         param_stack = [lam*con/SA, lam*tau/ob_weight]
+    #         return np.append(G_moX_off(t, con, tau, offSet), param_stack)
+    elif 'MB' in f_name:
         def Gt_lam(t, alpha, beta, tau1, tau2, oS):
-            return np.append(G_MB(t, alpha, beta, tau1, tau2, oS), [lam*alpha/ob_weight, lam*beta/SA, lam*tau1/ob_weight, lam*tau2/ob_weight])
+            param_stack = [lam*alpha/ob_weight, lam*beta/SA, lam*tau1/ob_weight, lam*tau2/ob_weight]
+            return np.append(G_MB(t, alpha, beta, tau1, tau2, oS), param_stack)
     else:
-        def Gt_lam(t, con1, con2, tau1, tau2):
-            return np.append(G(t, con1, con2, tau1, tau2), [lam*con1/SA, lam*con2/SA, lam*tau1/ob_weight, lam*tau2/ob_weight])
+        raise Exception("Not a valid function: " + f_name)
     return Gt_lam
 
 ############# Data Processing Functions ##############
@@ -245,26 +246,28 @@ def add_noise_brain_uniform(raw, SNR_desired, region, I_mask_factor):
 
     return I_noised, addSD
 
-################## Parameter Estimation Functions ###############
+################## Parameter Estimation Helper Functions ###############
 
-def get_param_p0(function, sig_init = 1, rand_opt = multistart_method):
-    f_name = function.__name__
+def get_param_p0(func, sig_init = 1, rand_opt = multistart_method):
+    f_name = func.__name__
        
     if 'biX' in f_name:
         if rand_opt:
-            init_p0 = [sig_init*0.2, sig_init*0.8, 20, 80]
+            init_p0 = [sig_init*0.2, sig_init*0.8, 20, 80, 1]
         else:
-            init_p0 = [sig_init*0.2, sig_init*0.8, 20, 80]
+            init_p0 = [sig_init*0.2, sig_init*0.8, 20, 80, 1]
     elif 'moX' in f_name:
         if rand_opt:
-            init_p0 = [sig_init*0.2, sig_init*0.8, 20, 80]
+            init_p0 = [sig_init, 20, 1]
         else:
-            init_p0 = [sig_init, 20]
+            init_p0 = [sig_init, 20, 1]
+    elif 'MB' in f_name:
+        if rand_opt:
+            init_p0 = [sig_init, 0.2, 20, 80, 1]
+        else:
+            init_p0 = [sig_init, 0.2, 20, 80, 1]
     else:
         raise Exception("Not a valid function: " + f_name)
-    
-    if 'off' in f_name:
-        init_p0.append(1)
 
     return init_p0
 
@@ -286,6 +289,8 @@ def check_param_order(popt, func):
             popt[2*i] = popt[2*i+1]
             popt[2*i+1] = p_hold
     return popt
+
+################## Parameter Estimation Functions ###############
 
 def estimate_parameters(data, lam, n_initials = num_multistarts):
     #Pick n_initials random initial conditions within the bound, and choose the one giving the lowest model-data mismatch residual
@@ -344,6 +349,40 @@ def estimate_parameters(data, lam, n_initials = num_multistarts):
  
     return popt, RSS_hold
 
+def modelSelect_estimation(i_voxel, brain_data_3D):
+    #Generates a comprehensive matrix of all parameter estimates for all param combinations, 
+    #noise realizations, SNR values, and lambdas of interest
+    i_vert, i_hori = target_iterator[i_voxel]
+    noise_data = brain_data_3D[i_vert, i_hori, :]
+    e_lis = []
+
+    #### Model Selection ####
+
+
+    for iLam in range(len(lambdas)):    #Loop through all lambda values
+        e_df = pd.DataFrame(columns = ["Data", "Indices", "Estimates", "RSS"])
+        lam = lambdas[iLam]
+
+        if np.all(noise_data == 0):
+            if estimate_offset or MB_model:
+                param_estimates = [0,0,1,1,0]
+            else:
+                param_estimates = [0,0,1,1]
+            RSS_estimate = np.inf
+        else:
+            param_estimates, RSS_estimate = estimate_parameters(noise_data, lam)
+        
+        assert(noise_data.shape[0] == n_elements_brain)
+        e_df["Data"] = [noise_data]
+        e_df["Indices"] = [[i_vert, i_hori]]
+        e_df["Estimates"] = [param_estimates]
+        e_df["RSS"] = [RSS_estimate]
+        e_lis.append(e_df)
+    
+    return pd.concat(e_lis, ignore_index= True)
+
+
+
 def generate_all_estimates(i_voxel, brain_data_3D):
     #Generates a comprehensive matrix of all parameter estimates for all param combinations, 
     #noise realizations, SNR values, and lambdas of interest
@@ -373,34 +412,7 @@ def generate_all_estimates(i_voxel, brain_data_3D):
     
     return pd.concat(e_lis, ignore_index= True)
 
-def judicial_estimation(i_voxel, brain_data_3D):
-    #Generates a comprehensive matrix of all parameter estimates for all param combinations, 
-    #noise realizations, SNR values, and lambdas of interest
-    i_vert, i_hori = target_iterator[i_voxel]
-    noise_data = brain_data_3D[i_vert, i_hori, :]
-    e_lis = []
 
-    for iLam in range(len(lambdas)):    #Loop through all lambda values
-        e_df = pd.DataFrame(columns = ["Data", "Indices", "Estimates", "RSS"])
-        lam = lambdas[iLam]
-
-        if np.all(noise_data == 0):
-            if estimate_offset or MB_model:
-                param_estimates = [0,0,1,1,0]
-            else:
-                param_estimates = [0,0,1,1]
-            RSS_estimate = np.inf
-        else:
-            param_estimates, RSS_estimate = estimate_parameters(noise_data, lam)
-        
-        assert(noise_data.shape[0] == n_elements_brain)
-        e_df["Data"] = [noise_data]
-        e_df["Indices"] = [[i_vert, i_hori]]
-        e_df["Estimates"] = [param_estimates]
-        e_df["RSS"] = [RSS_estimate]
-        e_lis.append(e_df)
-    
-    return pd.concat(e_lis, ignore_index= True)
 
 #### This ensures that the same mask is applied throughout
 
