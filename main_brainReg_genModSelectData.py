@@ -37,11 +37,9 @@ subsection = False              #Looks at a region a sixteenth of the full size
 multistart_method = False       #Applies a multistart method for each parameter fitting instance
 MB_model = False                #This model incoroporates the normalization and offset to a three parameter fit
 model_selection = False         #Compares monoX and biX to be able to choose fit process
-model_select_nonstand = False   #Compares monoX and biX based on that individual scan as opposed to using the standard reference
-CN_thresholding = False         #Uses the CN of the nonregularized value to regularize or not
 
 # The MB_model does the normalization as part of the algorithm
-if MB_model: assert(not apply_normalizer and not estimate_offset)
+if MB_model: assert(not apply_normalizer)
 
 ############## Frequently Changed Parameters ###########
 
@@ -67,7 +65,7 @@ if subsection:
 n_vert, n_hori, n_elements_brain = I_raw.shape
 
 t_increment_brain = 11.3 #This is a measurement originally indicated by Chuan Bi in the initial email about this data
-tdata = np.linspace(t_increment_brain, (n_elements_brain)*(t_increment_brain), n_elements_brain)
+TDATA = np.linspace(t_increment_brain, (n_elements_brain)*(t_increment_brain), n_elements_brain)
 
 #This is how we will keep track of all voxels that are called
 target_iterator = np.array([item for item in itertools.product(np.arange(0,n_vert,1), np.arange(0,n_hori,1))])
@@ -80,11 +78,11 @@ mask_amplitude = 750    #Might need to be greater
 #These bounds were chosen to match the simulated data while also being restrictive enough
 #This provides a little extra space as the hard bounds would be [1,1,50,300]
 if MB_model:
-    upper_bound = [np.inf, 0.5, 60, 2000, np.inf] #c1 used to be 0.5 - changed to 1 for complete range
+    upper_bound = [np.inf, 0.5, 80, 2000, np.inf] #c1 used to be 0.5 - changed to 1 for complete range
 elif not apply_normalizer:
-    upper_bound = [0.5, 1.2, 60, 300, np.inf]
+    upper_bound = [0.5, 1.5, 80, 300, np.inf]
 else:
-    upper_bound = [0.5, 1.2, 60, 300, np.inf]
+    upper_bound = [0.5, 1.5, 80, 300, np.inf]
 
 lambdas = np.append(0, np.logspace(-5,1, n_lambdas))
 
@@ -167,25 +165,33 @@ def G_MB(t, alpha, beta, tau_1, tau_2, offSet):
     function = alpha*(beta*np.exp(-t/tau_1) + (1-beta)*np.exp(-t/tau_2)) + offSet
     return function
 
-def G_tilde(lam, func, SA = 1):
-    #SA defines the signal amplitude, defaults to 1 with normalized data
+def G_reg(lam, func, SA = 1):
+    #SA defines the signal amplitude, defaults to 1 with assumed normalized data
     #Regularization is only applied to biexponential data
     f_name = func.__name__
     if 'biX' in f_name:
         def Gt_lam(t, con_1, con_2, tau_1, tau_2, offSet):
             param_stack = [lam*con_1/SA, lam*con_2/SA, lam*tau_1/ob_weight, lam*tau_2/ob_weight]
             return np.append(G_biX_off(t, con_1, con_2, tau_1, tau_2, offSet), param_stack)
-    # elif 'moX' in f_name:
-    #     def Gt_lam(t, con,tau, offSet):
-    #         param_stack = [lam*con/SA, lam*tau/ob_weight]
-    #         return np.append(G_moX_off(t, con, tau, offSet), param_stack)
     elif 'MB' in f_name:
         def Gt_lam(t, alpha, beta, tau1, tau2, oS):
-            param_stack = [lam*alpha/ob_weight, lam*beta/SA, lam*tau1/ob_weight, lam*tau2/ob_weight]
+            param_stack = [lam*alpha/SA, lam*beta, lam*tau1/ob_weight, lam*tau2/ob_weight]
             return np.append(G_MB(t, alpha, beta, tau1, tau2, oS), param_stack)
     else:
         raise Exception("Not a valid function: " + f_name)
     return Gt_lam
+
+def G_reg_param(lam, func, popt, SA = 1):
+    #SA defines the signal amplitude, defaults to 1 with assumed normalized data
+    #Regularization is only applied to biexponential data
+    f_name = func.__name__
+    if 'biX' in f_name:
+        param_stack = popt*[lam/SA, lam/SA, lam/ob_weight, lam/ob_weight]
+    elif 'MB' in f_name:
+        param_stack = [lam/SA, lam, lam/ob_weight, lam/ob_weight] 
+    else:
+        raise Exception("Not a valid function: " + f_name)
+    return param_stack
 
 ############# Data Processing Functions ##############
 
@@ -290,7 +296,126 @@ def check_param_order(popt, func):
             popt[2*i+1] = p_hold
     return popt
 
+def calc_Radu_SNR(sig, est_curve):
+    residuals = sig - est_curve
+    curve_std = np.max([np.std(residuals), 10**-16])
+    return sig[0]/curve_std
+
+def calculate_RSS(data, popt, func):
+    est_curve = func(TDATA, *popt)
+    RSS = np.sum((est_curve - data)**2)
+    
+    return RSS
+
+def calculate_reg_RSS(data, popt, func, lam):
+    est_curve = func(TDATA, *popt)
+
+    param_resid = G_reg_param(lam, func, popt, SA = data[0])
+
+    RSS = np.sum((est_curve - data)**2)
+    param_RSS = np.sum(param_resid**2)
+
+    return RSS + param_RSS
+
+def calculate_BIC(RSS, popt, sigma):
+
+    BIC = 1/TDATA.shape[0] * (RSS + np.log(TDATA.shape[0]) * popt.shape[0]*(sigma)**2)
+
+    return RSS
+
 ################## Parameter Estimation Functions ###############
+
+def single_reg_param_est(data, lam, func):
+            
+    init_p = get_param_p0(func, sig_init = data[0])
+    upper_bound = get_upperBounds(func)
+    lower_bound = np.zeros(upper_bound.shape[0])
+    parameter_tail = np.zeros(upper_bound.shape[0])
+    data_tilde = np.append(data, parameter_tail) # Adds zeros to the end of the regularization array for the param estimation
+    
+    try:
+        popt, _ = curve_fit(G_reg(lam, func, SA = data_tilde[0]), TDATA, data_tilde, bounds = (lower_bound, upper_bound), p0=init_p, max_nfev = 4000)
+    except Exception as error:
+        popt = [0,0,1,1,0]
+        print("Error in parameter fitting: " + str(error))
+
+    return popt
+
+
+
+def BIC_filter(data):
+
+    biX_upperBounds = get_upperBounds(G_biX_off)
+    moX_upperBounds = get_upperBounds(G_moX_off)
+
+    biX_lowerBounds = np.zeros(biX_upperBounds.shape[0])
+    moX_lowerBounds = np.zeros(moX_upperBounds.shape[0])
+
+    biX_initP = get_param_p0(G_biX_off, sig_init = data[0])
+    moX_initP = get_param_p0(G_moX_off, sig_init = data[0])
+
+    G_biX_off_params = curve_fit(G_biX_off, TDATA, data, bounds = (biX_lowerBounds, biX_upperBounds), p0=biX_initP, max_nfev = 4000)
+    G_moX_off_params = curve_fit(G_moX_off, TDATA, data, bounds = (moX_lowerBounds, moX_upperBounds), p0=moX_initP, max_nfev = 4000)
+
+    curve_SNR = calc_Radu_SNR(data, G_biX_off(TDATA, *G_biX_off_params))
+
+    RSS_biX = calculate_RSS(data, G_biX_off_params, G_biX_off)
+    RSS_moX = calculate_RSS(data, G_moX_off_params, G_moX_off)
+
+    BIC_G_biX = calculate_BIC(RSS_biX, G_biX_off_params, data[0]/curve_SNR)
+    BIC_G_moX = calculate_BIC(RSS_moX, G_moX_off_params, data[0]/curve_SNR)
+
+    return BIC_G_moX < BIC_G_biX, G_moX_off_params, BIC_G_moX
+
+
+def main_func(i_voxel, full_brain_data):
+    i_vert, i_hori = target_iterator[i_voxel]
+    data = full_brain_data[i_vert, i_hori, :]
+
+    elem_lis = []
+    feature_df = pd.DataFrame(columns = ["Data", "Indices", "Type"])
+    feature_df["Data"] = [data]
+    feature_df["Indices"] = [[i_vert, i_hori]]
+
+    #Catch all to remove any background pixels from evaluation - stops the calculations early
+    if data[0] == 0:
+        feature_df["Type"] = ["background"]
+        elem_lis.append(feature_df)
+        return pd.concat(elem_lis, ignore_index= True)
+
+    BIC_boolean, G_moX_off_params, RSS_moX = BIC_filter(data)
+
+    #BIC Model Selection
+    if BIC_boolean:
+        feature_df["Type"] = ["moX"]
+        elem_lis.append(feature_df)
+
+        lam_df = pd.DataFrame(columns = ["Params", "RSS"])
+        lam_df["Params"] = [G_moX_off_params]
+        lam_df["RSS"] = [RSS_moX]
+        elem_lis.append(lam_df)
+        
+    else:
+        feature_df["Type"] = ["biX"]
+        elem_lis.append(feature_df)
+
+        for lam in lambdas:    #Loop through all lambda values
+            param_estimates, RSS_estimate = estimate_regularized_parameters(data, lam)
+
+            lam_df = pd.DataFrame(columns = ["Params", "RSS"])
+            lam_df["Params"] = [param_estimates]
+            lam_df["RSS"] = [RSS_estimate]
+            elem_lis.append(lam_df)
+
+    return pd.concat(elem_lis, ignore_index= True)
+
+
+
+
+
+
+
+
 
 def estimate_parameters(data, lam, n_initials = num_multistarts):
     #Pick n_initials random initial conditions within the bound, and choose the one giving the lowest model-data mismatch residual
@@ -314,16 +439,10 @@ def estimate_parameters(data, lam, n_initials = num_multistarts):
             temp_upper_bound[1] = data_tilde[0]*upper_bound[1]
         
         try:
-            if estimate_offset or MB_model:
-                lower_bound = [0,0,0,0,0]
-            else:
-                lower_bound = [0,0,0,0]
+            lower_bound = [0,0,0,0,0]
             popt, _ = curve_fit(G_tilde(lam), tdata, data_tilde, bounds = (lower_bound, temp_upper_bound), p0=init_params, max_nfev = 4000)
         except Exception as error:
-            if estimate_offset or MB_model:
-                popt = [0,0,1,1,0]
-            else:
-                popt = [0,0,1,1]
+            popt = [0,0,1,1,0]
             print("Error in parameter fitting: " + str(error))
 
         if estimate_offset:
@@ -381,36 +500,6 @@ def modelSelect_estimation(i_voxel, brain_data_3D):
     
     return pd.concat(e_lis, ignore_index= True)
 
-
-
-def generate_all_estimates(i_voxel, brain_data_3D):
-    #Generates a comprehensive matrix of all parameter estimates for all param combinations, 
-    #noise realizations, SNR values, and lambdas of interest
-    i_vert, i_hori = target_iterator[i_voxel]
-    noise_data = brain_data_3D[i_vert, i_hori, :]
-    e_lis = []
-
-    for iLam in range(len(lambdas)):    #Loop through all lambda values
-        e_df = pd.DataFrame(columns = ["Data", "Indices", "Estimates", "RSS"])
-        lam = lambdas[iLam]
-
-        if np.all(noise_data == 0):
-            if estimate_offset or MB_model:
-                param_estimates = [0,0,1,1,0]
-            else:
-                param_estimates = [0,0,1,1]
-            RSS_estimate = np.inf
-        else:
-            param_estimates, RSS_estimate = estimate_parameters(noise_data, lam)
-        
-        assert(noise_data.shape[0] == n_elements_brain)
-        e_df["Data"] = [noise_data]
-        e_df["Indices"] = [[i_vert, i_hori]]
-        e_df["Estimates"] = [param_estimates]
-        e_df["RSS"] = [RSS_estimate]
-        e_lis.append(e_df)
-    
-    return pd.concat(e_lis, ignore_index= True)
 
 
 
