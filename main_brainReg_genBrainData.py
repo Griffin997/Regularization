@@ -45,10 +45,10 @@ if MB_model: assert(not apply_normalizer and not estimate_offset)
 
 n_lambdas = 101
 
-SNR_goal = 100
+SNR_goal = 50
 
 if add_noise:
-    iterations = 20
+    iterations = 10
 else:
     iterations = 1
 
