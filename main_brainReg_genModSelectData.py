@@ -55,7 +55,7 @@ else:
 
 ############## Initializing Data ##########
 
-file_oi = "NESMA_slice5.mat"
+file_oi = "NESMA_cropped_slice5.mat"
 folder_oi = "BLSA_1742_04_MCIAD_m41"
 
 output_folder = "ExperimentalSets"
@@ -64,9 +64,10 @@ brain_data = scipy.io.loadmat(os.getcwd() + f'/MB_References/{folder_oi}/{file_o
 I_raw = brain_data['slice_oi']
 
 if subsection:
-    I_raw_x = I_raw.shape[0]//4
-    I_raw_y = I_raw.shape[1]//4
-    I_raw = I_raw[I_raw_x:2*I_raw_x, I_raw_y:2*I_raw_y, :]
+    I_raw_vert = 36
+    I_raw_hori = 5
+    I_raw_extent = 60
+    I_raw = I_raw[I_raw_vert:I_raw_vert + I_raw_extent, I_raw_hori:I_raw_hori + I_raw_extent, :]
 
 n_vert, n_hori, n_elements_brain = I_raw.shape
 
@@ -84,7 +85,7 @@ mask_amplitude = 750    #Might need to be greater
 ob_weight = 100
 
 if multistart_method:
-    num_multistarts = 10
+    num_multistarts = 2
 else:
     num_multistarts = 1
 
@@ -98,10 +99,10 @@ if subsection:
     hori1 = 25
     hori2 = 70
 else:
-    vert1 = 165             #60     #108
-    vert2 = 180            #125     #116
-    hori1 = 120            #100      #86
-    hori2 = 180            #115      #93
+    vert1 = 90             #60     #108
+    vert2 = 110            #125     #116
+    hori1 = 70            #100      #86
+    hori2 = 130            #115      #93
 
 vBox = (vert1,vert1,vert2,vert2,vert1)
 hBox = (hori1,hori2,hori2,hori1,hori1)
