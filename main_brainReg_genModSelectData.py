@@ -44,6 +44,7 @@ if MB_model: assert(not apply_normalizer)
 ############## Frequently Changed Parameters ###########
 
 n_lambdas = 101
+lambdas = np.append(0, np.logspace(-5,1, n_lambdas))
 
 SNR_goal = 100
 
@@ -54,7 +55,12 @@ else:
 
 ############## Initializing Data ##########
 
-brain_data = scipy.io.loadmat(os.getcwd() + '/MB_References/BLSA_1742_04_MCIAD_m41/NESMA_slice5.mat')
+file_oi = "NESMA_slice5.mat"
+folder_oi = "BLSA_1742_04_MCIAD_m41"
+
+output_folder = "ExperimentalSets"
+
+brain_data = scipy.io.loadmat(os.getcwd() + f'/MB_References/{folder_oi}/{file_oi}')
 I_raw = brain_data['slice_oi']
 
 if subsection:
@@ -70,38 +76,21 @@ TDATA = np.linspace(t_increment_brain, (n_elements_brain)*(t_increment_brain), n
 #This is how we will keep track of all voxels that are called
 target_iterator = np.array([item for item in itertools.product(np.arange(0,n_vert,1), np.arange(0,n_hori,1))])
 
+############# Global Parameters ###############
+
 # all pixels with a lower mask amplitude are considered to be free water (i.e. vesicles)
 mask_amplitude = 750    #Might need to be greater
 
-############# Global Params ###############
-
-#These bounds were chosen to match the simulated data while also being restrictive enough
-#This provides a little extra space as the hard bounds would be [1,1,50,300]
-if MB_model:
-    upper_bound = [np.inf, 0.5, 80, 2000, np.inf] #c1 used to be 0.5 - changed to 1 for complete range
-elif not apply_normalizer:
-    upper_bound = [0.5, 1.5, 80, 300, np.inf]
-else:
-    upper_bound = [0.5, 1.5, 80, 300, np.inf]
-
-lambdas = np.append(0, np.logspace(-5,1, n_lambdas))
-
 ob_weight = 100
-if MB_model:
-    agg_weights = np.array([1/ob_weight, 1, 1/ob_weight, 1/ob_weight])
-if not apply_normalizer:
-    agg_weights = np.array([1,1,1,1])
-else:
-    agg_weights = np.array([1, 1, 1/ob_weight, 1/ob_weight])
 
 if multistart_method:
-    num_nultistarts = 10
-    ms_upper_bound = [1,60,300] 
+    num_multistarts = 10
 else:
     num_multistarts = 1
-    ms_upper_bound = [0] 
 
-SNR_collect = np.zeros(iterations)
+############# Standard Region of Interest ###############
+
+SNR_collect = []
 
 if subsection:
     vert1 = 37
@@ -135,20 +124,12 @@ else:
 if subsection:
     seriesTag = (seriesTag + f"subsection_")
 
-if upper_bound[0]==0.5:
-    seriesTag = (seriesTag + "halfC" + "_")
-
-if MB_model:
-    seriesTag = (seriesTag + "MBmod" + "_")
-
 if not apply_normalizer and not MB_model:
     seriesTag = (seriesTag + "NoNorm" + "_")
 
-# seriesTag = (seriesTag + "2000T22" + "_")
-
 seriesTag = (seriesTag + day + month + year)
 
-seriesFolder = (os.getcwd() + '/ExperimentalSets/' + seriesTag)
+seriesFolder = (os.getcwd() + f'/{output_folder}/{seriesTag}')
 os.makedirs(seriesFolder, exist_ok = True)
 
 ############# Signal Functions ##############
@@ -192,6 +173,13 @@ def G_reg_param(lam, func, popt, SA = 1):
     else:
         raise Exception("Not a valid function: " + f_name)
     return param_stack
+
+############# Selecting Function ###############
+
+if MB_model:
+    model_oi = G_MB
+else:
+    model_oi = G_biX_off
 
 ############# Data Processing Functions ##############
 
@@ -277,6 +265,22 @@ def get_param_p0(func, sig_init = 1, rand_opt = multistart_method):
 
     return init_p0
 
+def get_upperBound(func, sig_init = 1):
+    #These bounds were chosen to match the simulated data while also being restrictive enough
+    #This provides a little extra space as the hard bounds would be [1,1,50,300]
+    f_name = func.__name__
+       
+    if 'biX' in f_name:
+        init_p0 = [0.5*sig_init, 1.5*sig_init, 80, 300, np.inf]
+    elif 'moX' in f_name:
+        init_p0 = [1.5*sig_init, 300, np.inf]
+    elif 'MB' in f_name:
+        init_p0 = [np.inf, 0.5, 80, 2000, np.inf]
+    else:
+        raise Exception("Not a valid function: " + f_name)
+
+    return init_p0
+
 def check_param_order(popt, func):
     #Function to automate the order of parameters if desired
     #Reshaping of array to ensure that the parameter pairs all end up in the appropriate place - ensures that T22 > T21
@@ -328,7 +332,7 @@ def calculate_BIC(RSS, popt, sigma):
 def single_reg_param_est(data, lam, func):
             
     init_p = get_param_p0(func, sig_init = data[0])
-    upper_bound = get_upperBounds(func)
+    upper_bound = get_upperBound(func)
     lower_bound = np.zeros(upper_bound.shape[0])
     parameter_tail = np.zeros(upper_bound.shape[0])
     data_tilde = np.append(data, parameter_tail) # Adds zeros to the end of the regularization array for the param estimation
@@ -341,12 +345,34 @@ def single_reg_param_est(data, lam, func):
 
     return popt
 
+def perform_multi_estimates(data, lam, func, n_initials = num_multistarts):
+    #Pick n_initials random initial conditions within the bound, and choose the one giving the lowest model-data mismatch residual
+
+    RSS_hold = np.inf
+    reg_RSS_hold = np.inf
+    for i in range(n_initials):
+
+        popt = single_reg_param_est(data, lam, func)
+
+        reg_RSS_temp = calculate_reg_RSS(data, popt, func, lam)
+
+        RSS_temp = calculate_RSS(data, popt, func)
+
+        if reg_RSS_temp < reg_RSS_hold:
+            reg_RSS_hold = reg_RSS_temp
+            best_popt = popt
+            RSS_hold = RSS_temp
+        
+    popt = check_param_order(best_popt)
+ 
+    return popt, RSS_hold
+
 
 
 def BIC_filter(data):
 
-    biX_upperBounds = get_upperBounds(G_biX_off)
-    moX_upperBounds = get_upperBounds(G_moX_off)
+    biX_upperBounds = get_upperBound(G_biX_off)
+    moX_upperBounds = get_upperBound(G_moX_off)
 
     biX_lowerBounds = np.zeros(biX_upperBounds.shape[0])
     moX_lowerBounds = np.zeros(moX_upperBounds.shape[0])
@@ -368,7 +394,7 @@ def BIC_filter(data):
     return BIC_G_moX < BIC_G_biX, G_moX_off_params, BIC_G_moX
 
 
-def main_func(i_voxel, full_brain_data):
+def main_estimator(i_voxel, full_brain_data, func):
     i_vert, i_hori = target_iterator[i_voxel]
     data = full_brain_data[i_vert, i_hori, :]
 
@@ -382,8 +408,12 @@ def main_func(i_voxel, full_brain_data):
         feature_df["Type"] = ["background"]
         elem_lis.append(feature_df)
         return pd.concat(elem_lis, ignore_index= True)
-
-    BIC_boolean, G_moX_off_params, RSS_moX = BIC_filter(data)
+    
+    ##### Flag for model selection
+    if model_selection:
+        BIC_boolean, G_moX_off_params, RSS_moX = BIC_filter(data)
+    else:
+        BIC_boolean = False
 
     #BIC Model Selection
     if BIC_boolean:
@@ -394,13 +424,12 @@ def main_func(i_voxel, full_brain_data):
         lam_df["Params"] = [G_moX_off_params]
         lam_df["RSS"] = [RSS_moX]
         elem_lis.append(lam_df)
-        
     else:
         feature_df["Type"] = ["biX"]
         elem_lis.append(feature_df)
 
         for lam in lambdas:    #Loop through all lambda values
-            param_estimates, RSS_estimate = estimate_regularized_parameters(data, lam)
+            param_estimates, RSS_estimate = perform_multi_estimates(data, lam, func)
 
             lam_df = pd.DataFrame(columns = ["Params", "RSS"])
             lam_df["Params"] = [param_estimates]
@@ -408,99 +437,6 @@ def main_func(i_voxel, full_brain_data):
             elem_lis.append(lam_df)
 
     return pd.concat(elem_lis, ignore_index= True)
-
-
-
-
-
-
-
-
-
-def estimate_parameters(data, lam, n_initials = num_multistarts):
-    #Pick n_initials random initial conditions within the bound, and choose the one giving the lowest model-data mismatch residual
-
-    parameter_tail = [0,0,0,0]
-    data_tilde = np.append(data, parameter_tail) # Adds zeros to the end of the regularization array for the param estimation
-    
-    RSS_hold = np.inf
-    obj_hold = np.inf
-    for i in range(n_initials):
-
-        np.random.seed(i) #Only has an effect on the multistart strategy
-        if MB_model or not apply_normalizer:
-            init_params = get_param_p0(sig_init = data_tilde[0])
-        else:
-            init_params = get_param_p0()
-
-        temp_upper_bound = np.copy(upper_bound)
-        if not apply_normalizer and not MB_model:
-            temp_upper_bound[0] = data_tilde[0]*upper_bound[0]
-            temp_upper_bound[1] = data_tilde[0]*upper_bound[1]
-        
-        try:
-            lower_bound = [0,0,0,0,0]
-            popt, _ = curve_fit(G_tilde(lam), tdata, data_tilde, bounds = (lower_bound, temp_upper_bound), p0=init_params, max_nfev = 4000)
-        except Exception as error:
-            popt = [0,0,1,1,0]
-            print("Error in parameter fitting: " + str(error))
-
-        if estimate_offset:
-            est_curve = G_off(tdata,*popt)
-        elif MB_model:
-            est_curve = G_MB(tdata,*popt)
-        else:
-            est_curve = G(tdata,*popt)
-        RSS_temp = np.sum((est_curve - data)**2)
-
-        obj_pTemp = lam*agg_weights*popt[0:4]
-        obj_temp = RSS_temp + np.linalg.norm(obj_pTemp)
-
-        if obj_temp < obj_hold:
-            obj_hold = obj_temp
-            best_popt = popt
-            RSS_hold = RSS_temp
-        
-    if not MB_model:
-        popt = check_param_order(best_popt)
-    else:
-        popt = best_popt
- 
-    return popt, RSS_hold
-
-def modelSelect_estimation(i_voxel, brain_data_3D):
-    #Generates a comprehensive matrix of all parameter estimates for all param combinations, 
-    #noise realizations, SNR values, and lambdas of interest
-    i_vert, i_hori = target_iterator[i_voxel]
-    noise_data = brain_data_3D[i_vert, i_hori, :]
-    e_lis = []
-
-    #### Model Selection ####
-
-
-    for iLam in range(len(lambdas)):    #Loop through all lambda values
-        e_df = pd.DataFrame(columns = ["Data", "Indices", "Estimates", "RSS"])
-        lam = lambdas[iLam]
-
-        if np.all(noise_data == 0):
-            if estimate_offset or MB_model:
-                param_estimates = [0,0,1,1,0]
-            else:
-                param_estimates = [0,0,1,1]
-            RSS_estimate = np.inf
-        else:
-            param_estimates, RSS_estimate = estimate_parameters(noise_data, lam)
-        
-        assert(noise_data.shape[0] == n_elements_brain)
-        e_df["Data"] = [noise_data]
-        e_df["Indices"] = [[i_vert, i_hori]]
-        e_df["Estimates"] = [param_estimates]
-        e_df["RSS"] = [RSS_estimate]
-        e_lis.append(e_df)
-    
-    return pd.concat(e_lis, ignore_index= True)
-
-
 
 
 #### This ensures that the same mask is applied throughout
@@ -527,13 +463,14 @@ for iter in range(iterations):    #Build {iterations} number of noisey brain rea
     else:
         noise_iteration = I_noised
 
-    SNR_collect[iter] = calculate_brain_SNR(noise_iteration, noiseRegion)
+    SNR_collect.append(calculate_brain_SNR(noise_iteration, noiseRegion))
 
     if __name__ == '__main__':
         freeze_support()
 
         print("Finished Assignments...")
 
+        ##### Set number of CPUs that we take advantage of
         num_cpus_avail = 80
         print("Using Super Computer")
 
@@ -543,7 +480,7 @@ for iter in range(iterations):    #Build {iterations} number of noisey brain rea
         with mp.Pool(processes = num_cpus_avail) as pool:
 
             with tqdm(total=target_iterator.shape[0]) as pbar:
-                for estimates_dataframe in pool.imap_unordered(lambda hold_label: generate_all_estimates(hold_label, noise_iteration), range(target_iterator.shape[0])):
+                for estimates_dataframe in pool.imap_unordered(lambda hold_iter: main_estimator(hold_iter, noise_iteration, model_oi), range(target_iterator.shape[0])):
 
                     lis.append(estimates_dataframe)
 
@@ -564,18 +501,17 @@ hprParams = {
     'n_noise_realizations': iterations,
     'lambdas': lambdas,
     "data_file": "BLSA_1742_04_MCIAD_m41",
-    "data_slice": "rS_slice5",
-    'tdata': tdata,
+    "data_slice": file_oi,
+    'tdata': TDATA,
     'ob_weight': ob_weight,
-    'agg_weights': agg_weights,
     'num_multistarts': num_multistarts,
-    'upper_bound': upper_bound,
+    'model_oi': model_oi,
+    'upper_bound': get_upperBound(model_oi),
     'mask_amp': mask_amplitude,
-    'ms_upBound': ms_upper_bound,
     'n_horizontal': n_hori,
     'n_verticle': n_vert,
     'options': [add_noise, add_mask, apply_normalizer, 
-                estimate_offset, subsection, rand_state, MB_model],
+                subsection, MB_model, model_selection],
     'SNR_array': SNR_collect
 }
 
