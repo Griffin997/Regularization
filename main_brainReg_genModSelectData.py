@@ -31,12 +31,13 @@ import functools
 ############# Data Set Options & Hyperparameters ############
 
 add_noise = True               #True for a standard reference and False for a noise set
-add_mask = True                #Add a mask to the data - this mask eliminates data below a threshold (mas_amplitude)
+add_mask = False                #Add a mask to the data - this mask eliminates data below a threshold (mas_amplitude)
 apply_normalizer = True        #Normalizes the data during the processing step
 subsection = False              #Looks at a region a sixteenth of the full size
 multistart_method = False       #Applies a multistart method for each parameter fitting instance
 MB_model = False                #This model incoroporates the normalization and offset to a three parameter fit
-model_selection = False         #Compares monoX and biX to be able to choose fit process
+model_selection = True         #Compares monoX and biX to be able to choose fit process
+testCase = True
 
 # The MB_model does the normalization as part of the algorithm
 if MB_model: assert(not apply_normalizer)
@@ -51,17 +52,18 @@ SNR_goal = 100
 if add_noise:
     iterations = 1
 else:
-    iterations = 20
+    iterations = 3
 
 ############## Initializing Data ##########
 
-file_oi = "NESMA_cropped_slice5.mat"
-folder_oi = "BLSA_1742_04_MCIAD_m41"
+file_oi = "BIC_triTest.mat"#"NESMA_cropped_slice5.mat"
+folder_oi = "BIC_tests"#"BLSA_1742_04_MCIAD_m41"
+specific_name = "BIC_triTest"#'slice_oi'
 
 output_folder = "ExperimentalSets"
 
-brain_data = scipy.io.loadmat(os.getcwd() + f'/MB_References/{folder_oi}/{file_oi}')
-I_raw = brain_data['slice_oi']
+brain_data = scipy.io.loadmat(os.getcwd() + f'\\MB_References\\{folder_oi}\\{file_oi}')
+I_raw = brain_data[specific_name]
 
 if subsection:
     I_raw_vert = 36
@@ -98,6 +100,11 @@ if subsection:
     vert2 = 47
     hori1 = 25
     hori2 = 70
+elif testCase:
+    vert1 = 0
+    vert2 = 9
+    hori1 = 0
+    hori2 = 9
 else:
     vert1 = 90             #60     #108
     vert2 = 110            #125     #116
@@ -168,9 +175,9 @@ def G_reg_param(lam, func, popt, SA = 1):
     #Regularization is only applied to biexponential data
     f_name = func.__name__
     if 'biX' in f_name:
-        param_stack = popt*[lam/SA, lam/SA, lam/ob_weight, lam/ob_weight]
+        param_stack = popt*np.array([lam/SA, lam/SA, lam/ob_weight, lam/ob_weight])
     elif 'MB' in f_name:
-        param_stack = [lam/SA, lam, lam/ob_weight, lam/ob_weight] 
+        param_stack = popt*np.array([lam/SA, lam, lam/ob_weight, lam/ob_weight])
     else:
         raise Exception("Not a valid function: " + f_name)
     return param_stack
@@ -203,7 +210,10 @@ def calculate_brain_SNR(raw, region):
     regionEnd_std = np.std(regionEnd)
     regionEnd_absMean = np.mean(np.abs(regionEnd))
 
-    SNR_region = (regionZero_mean - regionEnd_absMean)/regionEnd_std
+    if regionEnd_std == 0:
+        SNR_region = np.inf
+    else:
+        SNR_region = (regionZero_mean - regionEnd_absMean)/regionEnd_std
 
     return SNR_region
 
@@ -334,8 +344,8 @@ def single_reg_param_est(data, lam, func):
             
     init_p = get_param_p0(func, sig_init = data[0])
     upper_bound = get_upperBound(func)
-    lower_bound = np.zeros(upper_bound.shape[0])
-    parameter_tail = np.zeros(upper_bound.shape[0])
+    lower_bound = np.zeros(len(upper_bound))
+    parameter_tail = np.zeros(len(upper_bound))
     data_tilde = np.append(data, parameter_tail) # Adds zeros to the end of the regularization array for the param estimation
     
     try:
@@ -375,14 +385,14 @@ def BIC_filter(data):
     biX_upperBounds = get_upperBound(G_biX_off)
     moX_upperBounds = get_upperBound(G_moX_off)
 
-    biX_lowerBounds = np.zeros(biX_upperBounds.shape[0])
-    moX_lowerBounds = np.zeros(moX_upperBounds.shape[0])
+    biX_lowerBounds = np.zeros(len(biX_upperBounds))
+    moX_lowerBounds = np.zeros(len(moX_upperBounds))
 
     biX_initP = get_param_p0(G_biX_off, sig_init = data[0])
     moX_initP = get_param_p0(G_moX_off, sig_init = data[0])
 
-    G_biX_off_params = curve_fit(G_biX_off, TDATA, data, bounds = (biX_lowerBounds, biX_upperBounds), p0=biX_initP, max_nfev = 4000)
-    G_moX_off_params = curve_fit(G_moX_off, TDATA, data, bounds = (moX_lowerBounds, moX_upperBounds), p0=moX_initP, max_nfev = 4000)
+    G_biX_off_params, _ = curve_fit(G_biX_off, TDATA, data, bounds = (biX_lowerBounds, biX_upperBounds), p0=biX_initP, max_nfev = 4000)
+    G_moX_off_params, _ = curve_fit(G_moX_off, TDATA, data, bounds = (moX_lowerBounds, moX_upperBounds), p0=moX_initP, max_nfev = 4000)
 
     curve_SNR = calc_Radu_SNR(data, G_biX_off(TDATA, *G_biX_off_params))
 
@@ -444,9 +454,9 @@ def main_estimator(i_voxel, full_brain_data, func):
 
 if add_mask:
     I_masked = mask_data(I_raw, mask_amplitude)
-    I_mask_factor = (I_masked!=0)
 else:
     I_masked = I_raw
+I_mask_factor = (I_masked!=0)
 
 #### Looping through Iterations of the brain - applying parallel processing to improve the speed
 
@@ -472,8 +482,9 @@ for iter in range(iterations):    #Build {iterations} number of noisey brain rea
         print("Finished Assignments...")
 
         ##### Set number of CPUs that we take advantage of
-        num_cpus_avail = 80
-        print("Using Super Computer")
+        num_cpus_avail = 3
+        if num_cpus_avail == 80:
+            print("Using Super Computer")
 
         print(f"Building {iter+1} Dataset of {iterations}...")
         lis = []
@@ -501,7 +512,7 @@ hprParams = {
     "SNR_goal": SNR_goal,
     'n_noise_realizations': iterations,
     'lambdas': lambdas,
-    "data_file": "BLSA_1742_04_MCIAD_m41",
+    "data_file": folder_oi,
     "data_slice": file_oi,
     'tdata': TDATA,
     'ob_weight': ob_weight,
