@@ -72,8 +72,8 @@ brain_data = scipy.io.loadmat(os.getcwd() + f'\\MB_References\\{folder_oi}\\{fil
 I_raw = brain_data[specific_name]
 
 if subsection:
-    I_raw_vert = 36
-    I_raw_hori = 5
+    I_raw_vert = 5
+    I_raw_hori = 36
     I_raw_extent = 60
     I_raw = I_raw[I_raw_vert:I_raw_vert + I_raw_extent, I_raw_hori:I_raw_hori + I_raw_extent, :]
 
@@ -107,10 +107,10 @@ if testCase:
     hori1 = 0
     hori2 = 9
 elif subsection:
-    vert1 = 37
-    vert2 = 47
+    vert1 = 33
+    vert2 = 43
     hori1 = 25
-    hori2 = 70
+    hori2 = 59
 else:
     vert1 = 90             #60     #108
     vert2 = 110            #125     #116
