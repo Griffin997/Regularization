@@ -30,7 +30,7 @@ import functools
 
 ############# Data Set Options & Hyperparameters ############
 
-add_noise = True               #True for a standard reference and False for a noise set
+add_noise = True              #True for a standard reference and False for a noise set
 add_mask = False                #Add a mask to the data - this mask eliminates data below a threshold (mas_amplitude)
 apply_normalizer = True        #Normalizes the data during the processing step
 subsection = False              #Looks at a region a sixteenth of the full size
@@ -49,16 +49,21 @@ lambdas = np.append(0, np.logspace(-5,1, n_lambdas))
 
 SNR_goal = 100
 
-if add_noise:
+addTag = 'small2_'
+
+#There are 8 cpus available on my personal computer
+num_cpus_avail = 3
+
+if not add_noise:
     iterations = 1
 else:
     iterations = 3
 
 ############## Initializing Data ##########
 
-file_oi = "BIC_triTest.mat"#"NESMA_cropped_slice5.mat"
-folder_oi = "BIC_tests"#"BLSA_1742_04_MCIAD_m41"
-specific_name = "BIC_triTest"#'slice_oi'
+file_oi = "BIC_triTest.mat"#"BIC_triTest.mat"#"NESMA_cropped_slice5.mat"
+folder_oi = "BIC_tests"#"BIC_tests"#"BLSA_1742_04_MCIAD_m41"
+specific_name = 'BIC_triTest'#"BIC_triTest"#'slice_oi' - this is important if the data strux has an internal name
 
 output_folder = "ExperimentalSets"
 
@@ -95,16 +100,16 @@ else:
 
 SNR_collect = []
 
-if subsection:
-    vert1 = 37
-    vert2 = 47
-    hori1 = 25
-    hori2 = 70
-elif testCase:
+if testCase:
     vert1 = 0
     vert2 = 9
     hori1 = 0
     hori2 = 9
+elif subsection:
+    vert1 = 37
+    vert2 = 47
+    hori1 = 25
+    hori2 = 70
 else:
     vert1 = 90             #60     #108
     vert2 = 110            #125     #116
@@ -135,7 +140,12 @@ if subsection:
 if not apply_normalizer and not MB_model:
     seriesTag = (seriesTag + "NoNorm" + "_")
 
-seriesTag = (seriesTag + day + month + year)
+if testCase:
+    seriesTag = (seriesTag + "testCase" + "_")
+
+
+
+seriesTag = (seriesTag + addTag + day + month + year)
 
 seriesFolder = (os.getcwd() + f'/{output_folder}/{seriesTag}')
 os.makedirs(seriesFolder, exist_ok = True)
@@ -175,9 +185,9 @@ def G_reg_param(lam, func, popt, SA = 1):
     #Regularization is only applied to biexponential data
     f_name = func.__name__
     if 'biX' in f_name:
-        param_stack = popt*np.array([lam/SA, lam/SA, lam/ob_weight, lam/ob_weight])
+        param_stack = popt[:4]*np.array([lam/SA, lam/SA, lam/ob_weight, lam/ob_weight])
     elif 'MB' in f_name:
-        param_stack = popt*np.array([lam/SA, lam, lam/ob_weight, lam/ob_weight])
+        param_stack = popt[:4]*np.array([lam/SA, lam, lam/ob_weight, lam/ob_weight])
     else:
         raise Exception("Not a valid function: " + f_name)
     return param_stack
@@ -230,9 +240,11 @@ def normalize_brain(I_data):
             I_normalized[i_vert,i_hori,:] = data_normalized
     return I_normalized
 
-def add_noise_brain_uniform(raw, SNR_desired, region, I_mask_factor):
+def add_noise_brain_uniform(raw, SNR_desired, region, I_mask_factor, noise_seed):
     #This function was built with the intention of taking a region (e.g. the homogenous region to the right of the ventricles)
     #Add noise to make sure the final SNR is close to the desired SNR
+
+    np.random.seed(noise_seed)
 
     v1,v2,h1,h2 = region
 
@@ -282,7 +294,7 @@ def get_upperBound(func, sig_init = 1):
     f_name = func.__name__
        
     if 'biX' in f_name:
-        init_p0 = [0.5*sig_init, 1.5*sig_init, 80, 300, np.inf]
+        init_p0 = [0.75*sig_init, 2*sig_init, 80, 300, np.inf]
     elif 'moX' in f_name:
         init_p0 = [1.5*sig_init, 300, np.inf]
     elif 'MB' in f_name:
@@ -345,7 +357,7 @@ def single_reg_param_est(data, lam, func):
     init_p = get_param_p0(func, sig_init = data[0])
     upper_bound = get_upperBound(func)
     lower_bound = np.zeros(len(upper_bound))
-    parameter_tail = np.zeros(len(upper_bound))
+    parameter_tail = np.zeros(len(upper_bound)-1)
     data_tilde = np.append(data, parameter_tail) # Adds zeros to the end of the regularization array for the param estimation
     
     try:
@@ -374,7 +386,7 @@ def perform_multi_estimates(data, lam, func, n_initials = num_multistarts):
             best_popt = popt
             RSS_hold = RSS_temp
         
-    popt = check_param_order(best_popt)
+    popt = check_param_order(best_popt, func)
  
     return popt, RSS_hold
 
@@ -409,16 +421,17 @@ def main_estimator(i_voxel, full_brain_data, func):
     i_vert, i_hori = target_iterator[i_voxel]
     data = full_brain_data[i_vert, i_hori, :]
 
-    elem_lis = []
-    feature_df = pd.DataFrame(columns = ["Data", "Indices", "Type"])
+    # elem_lis = []
+    feature_df = pd.DataFrame(columns = ["Data", "Indices", "Type", "Params", "RSS"])
     feature_df["Data"] = [data]
     feature_df["Indices"] = [[i_vert, i_hori]]
 
     #Catch all to remove any background pixels from evaluation - stops the calculations early
     if data[0] == 0:
         feature_df["Type"] = ["background"]
-        elem_lis.append(feature_df)
-        return pd.concat(elem_lis, ignore_index= True)
+        # elem_lis.append(feature_df)
+        # return pd.concat(elem_lis, ignore_index= True)
+        return feature_df
     
     ##### Flag for model selection
     if model_selection:
@@ -429,25 +442,31 @@ def main_estimator(i_voxel, full_brain_data, func):
     #BIC Model Selection
     if BIC_boolean:
         feature_df["Type"] = ["moX"]
-        elem_lis.append(feature_df)
+        # elem_lis.append(feature_df)
 
-        lam_df = pd.DataFrame(columns = ["Params", "RSS"])
-        lam_df["Params"] = [G_moX_off_params]
-        lam_df["RSS"] = [RSS_moX]
-        elem_lis.append(lam_df)
+        # lam_df = pd.DataFrame(columns = ["Params", "RSS"])
+        feature_df["Params"] = [G_moX_off_params]
+        feature_df["RSS"] = [RSS_moX]
+        # elem_lis.append(lam_df)
     else:
         feature_df["Type"] = ["biX"]
-        elem_lis.append(feature_df)
+        # elem_lis.append(feature_df)
 
+        RSS_list = []
+        param_estimates_list = []
         for lam in lambdas:    #Loop through all lambda values
             param_estimates, RSS_estimate = perform_multi_estimates(data, lam, func)
 
-            lam_df = pd.DataFrame(columns = ["Params", "RSS"])
-            lam_df["Params"] = [param_estimates]
-            lam_df["RSS"] = [RSS_estimate]
-            elem_lis.append(lam_df)
+            # lam_df = pd.DataFrame(columns = ["Params", "RSS"])
+            
+            RSS_list.append(RSS_estimate)
+            param_estimates_list.append(param_estimates)
 
-    return pd.concat(elem_lis, ignore_index= True)
+        feature_df["Params"] = [np.array(param_estimates_list)]
+        feature_df["RSS"] = [RSS_list]
+
+    # return pd.concat(elem_lis, ignore_index= True)
+    return feature_df
 
 
 #### This ensures that the same mask is applied throughout
@@ -465,7 +484,7 @@ for iter in range(iterations):    #Build {iterations} number of noisey brain rea
     np.random.seed(iter)
 
     if add_noise:
-        I_noised = add_noise_brain_uniform(I_masked, SNR_goal, noiseRegion, I_mask_factor)[0]
+        I_noised = add_noise_brain_uniform(I_masked, SNR_goal, noiseRegion, I_mask_factor, iter)[0]
     else:
         I_noised = I_masked
 
@@ -479,11 +498,12 @@ for iter in range(iterations):    #Build {iterations} number of noisey brain rea
     if __name__ == '__main__':
         freeze_support()
 
+
         print("Finished Assignments...")
 
         ##### Set number of CPUs that we take advantage of
-        num_cpus_avail = 3
-        if num_cpus_avail == 80:
+        
+        if num_cpus_avail >= 10:
             print("Using Super Computer")
 
         print(f"Building {iter+1} Dataset of {iterations}...")
@@ -500,11 +520,13 @@ for iter in range(iterations):    #Build {iterations} number of noisey brain rea
 
             pool.close()
             pool.join()
+        
 
         print(f"Completed {len(lis)} of {target_iterator.shape[0]} voxels") #should be target_iterator.shape[0]
         df = pd.concat(lis, ignore_index= True)
 
-        df.to_feather(seriesFolder + f'/brainData_' + seriesTag + f'_iteration_{iter}.feather')           
+        df.to_pickle(seriesFolder + f'/brainData_' + seriesTag + f'_iteration_{iter}.pkl')     
+    
 
 ############## Save General Code ################
 
@@ -520,10 +542,12 @@ hprParams = {
     'model_oi': model_oi,
     'upper_bound': get_upperBound(model_oi),
     'mask_amp': mask_amplitude,
+    'masked_region': I_mask_factor,
     'n_horizontal': n_hori,
     'n_verticle': n_vert,
     'options': [add_noise, add_mask, apply_normalizer, 
-                subsection, MB_model, model_selection],
+                subsection, MB_model, model_selection,
+                multistart_method, testCase],
     'SNR_array': SNR_collect
 }
 
