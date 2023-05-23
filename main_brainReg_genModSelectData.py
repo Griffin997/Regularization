@@ -14,6 +14,7 @@ import time
 import itertools
 from itertools import product, zip_longest
 import pickle
+import functools
 from tqdm import tqdm, trange
 from datetime import date
 
@@ -478,25 +479,24 @@ else:
 I_mask_factor = (I_masked!=0)
 
 #### Looping through Iterations of the brain - applying parallel processing to improve the speed
+if __name__ == '__main__':
+    freeze_support()
 
-for iter in range(iterations):    #Build {iterations} number of noisey brain realizations
+    for iter in range(iterations):    #Build {iterations} number of noisey brain realizations
 
-    np.random.seed(iter)
+        np.random.seed(iter)
 
-    if add_noise:
-        I_noised = add_noise_brain_uniform(I_masked, SNR_goal, noiseRegion, I_mask_factor, iter)[0]
-    else:
-        I_noised = I_masked
+        if add_noise:
+            I_noised = add_noise_brain_uniform(I_masked, SNR_goal, noiseRegion, I_mask_factor, iter)[0]
+        else:
+            I_noised = I_masked
 
-    if apply_normalizer:
-        noise_iteration = normalize_brain(I_noised)
-    else:
-        noise_iteration = I_noised
+        if apply_normalizer:
+            noise_iteration = normalize_brain(I_noised)
+        else:
+            noise_iteration = I_noised
 
-    SNR_collect.append(calculate_brain_SNR(noise_iteration, noiseRegion))
-
-    if __name__ == '__main__':
-        freeze_support()
+        SNR_collect.append(calculate_brain_SNR(noise_iteration, noiseRegion))
 
 
         print("Finished Assignments...")
@@ -512,7 +512,8 @@ for iter in range(iterations):    #Build {iterations} number of noisey brain rea
         with mp.Pool(processes = num_cpus_avail) as pool:
 
             with tqdm(total=target_iterator.shape[0]) as pbar:
-                for estimates_dataframe in pool.imap_unordered(lambda hold_iter: main_estimator(hold_iter, noise_iteration, model_oi), range(target_iterator.shape[0])):
+                for estimates_dataframe in pool.imap_unordered(functools.partial(main_estimator, full_brain_data = noise_iteration, func = model_oi), range(target_iterator.shape[0])):
+                # for estimates_dataframe in pool.imap_unordered(lambda hold_iter: main_estimator(hold_iter, noise_iteration, model_oi), range(target_iterator.shape[0])):
 
                     lis.append(estimates_dataframe)
 
