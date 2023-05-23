@@ -30,7 +30,7 @@ import functools
 
 ############# Data Set Options & Hyperparameters ############
 
-add_noise = True          #Add noise to the data beyond what is there naturally
+add_noise = False         #Add noise to the data beyond what is there naturally
 add_mask = True             #Add a mask to the data - this mask eliminates data below a threshold (mas_amplitude)
 apply_normalizer = True     #Normalizes the data during the processing step
 estimate_offset = True      #Adds an offset to the signal that is estimated
@@ -86,7 +86,7 @@ if MB_model:
 elif not apply_normalizer:
     upper_bound = [0.5,1.2,60,300]
 else:
-    upper_bound = [0.5,1.2,60,300]
+    upper_bound = [0.5,1.5,80,300]
 
 if estimate_offset or MB_model:
     upper_bound.append(np.inf)
