@@ -32,13 +32,13 @@ import functools
 ############# Data Set Options & Hyperparameters ############
 
 add_noise = True              #True for a standard reference and False for a noise set
-add_mask = False                #Add a mask to the data - this mask eliminates data below a threshold (mas_amplitude)
+add_mask = True                #Add a mask to the data - this mask eliminates data below a threshold (mas_amplitude)
 apply_normalizer = True        #Normalizes the data during the processing step
-subsection = False              #Looks at a region a sixteenth of the full size
+subsection = True              #Looks at a region a sixteenth of the full size
 multistart_method = False       #Applies a multistart method for each parameter fitting instance
 MB_model = False                #This model incoroporates the normalization and offset to a three parameter fit
 model_selection = True         #Compares monoX and biX to be able to choose fit process
-testCase = True
+testCase = False
 
 # The MB_model does the normalization as part of the algorithm
 if MB_model: assert(not apply_normalizer)
@@ -50,10 +50,10 @@ lambdas = np.append(0, np.logspace(-5,1, n_lambdas))
 
 SNR_goal = 100
 
-addTag = 'small2_'
+addTag = ''
 
 #There are 8 cpus available on my personal computer
-num_cpus_avail = 3
+num_cpus_avail = 50
 
 if not add_noise:
     iterations = 1
@@ -62,13 +62,15 @@ else:
 
 ############## Initializing Data ##########
 
-file_oi = "BIC_triTest.mat"#"BIC_triTest.mat"#"NESMA_cropped_slice5.mat"
-folder_oi = "BIC_tests"#"BIC_tests"#"BLSA_1742_04_MCIAD_m41"
-specific_name = 'BIC_triTest'#"BIC_triTest"#'slice_oi' - this is important if the data strux has an internal name
+file_oi = "NESMA_cropped_slice5.mat"#"BIC_triTest.mat"#"NESMA_cropped_slice5.mat"
+folder_oi = "BLSA_1742_04_MCIAD_m41"#"BIC_tests"#"BLSA_1742_04_MCIAD_m41"
+specific_name = 'slice_oi'#"BIC_triTest"#'slice_oi' - this is important if the data strux has an internal name
 
 output_folder = "ExperimentalSets"
-
-brain_data = scipy.io.loadmat(os.getcwd() + f'\\MB_References\\{folder_oi}\\{file_oi}')
+try:
+    brain_data = scipy.io.loadmat(os.getcwd() + f'\\MB_References\\{folder_oi}\\{file_oi}')
+except:
+    brain_data = scipy.io.loadmat(os.getcwd() + f'/MB_References/{folder_oi}/{file_oi}')
 I_raw = brain_data[specific_name]
 
 if subsection:
