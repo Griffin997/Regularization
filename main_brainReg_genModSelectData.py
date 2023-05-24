@@ -34,7 +34,7 @@ import functools
 add_noise = True              #True for a standard reference and False for a noise set
 add_mask = True                #Add a mask to the data - this mask eliminates data below a threshold (mas_amplitude)
 apply_normalizer = True        #Normalizes the data during the processing step
-subsection = True              #Looks at a region a sixteenth of the full size
+subsection = False              #Looks at a region a sixteenth of the full size
 multistart_method = False       #Applies a multistart method for each parameter fitting instance
 MB_model = False                #This model incoroporates the normalization and offset to a three parameter fit
 model_selection = True         #Compares monoX and biX to be able to choose fit process
@@ -114,9 +114,9 @@ elif subsection:
     hori1 = 25
     hori2 = 59
 else:
-    vert1 = 90             #60     #108
+    vert1 = 92             #60     #108
     vert2 = 110            #125     #116
-    hori1 = 70            #100      #86
+    hori1 = 75            #100      #86
     hori2 = 130            #115      #93
 
 vBox = (vert1,vert1,vert2,vert2,vert1)
@@ -233,8 +233,8 @@ def calculate_brain_SNR(raw, region):
 def normalize_brain(I_data):
     n_vert, n_hori, n_elem = I_data.shape
     I_normalized = np.zeros(I_data.shape)
-    for i_vert in range(n_hori):
-        for i_hori in range(n_vert):
+    for i_vert in range(n_vert):
+        for i_hori in range(n_hori):
             data = I_data[i_vert,i_hori,:]
             if data[0]>0:
                 data_normalized = data/(data[0])
