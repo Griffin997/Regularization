@@ -31,7 +31,7 @@ import functools
 
 ############# Data Set Options & Hyperparameters ############
 
-add_noise = True              #True for a standard reference and False for a noise set
+add_noise = False              #True for a standard reference and False for a noise set
 add_mask = True                #Add a mask to the data - this mask eliminates data below a threshold (mas_amplitude)
 apply_normalizer = True        #Normalizes the data during the processing step
 subsection = False              #Looks at a region a sixteenth of the full size
@@ -48,7 +48,7 @@ if MB_model: assert(not apply_normalizer)
 n_lambdas = 101
 lambdas = np.append(0, np.logspace(-5,1, n_lambdas))
 
-SNR_goal = 75
+SNR_goal = 100
 
 addTag = ''
 
@@ -58,7 +58,7 @@ num_cpus_avail = 50
 if not add_noise:
     iterations = 1
 else:
-    iterations = 10
+    iterations = 3
 
 ############## Initializing Data ##########
 
