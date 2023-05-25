@@ -48,7 +48,7 @@ if MB_model: assert(not apply_normalizer)
 n_lambdas = 101
 lambdas = np.append(0, np.logspace(-5,1, n_lambdas))
 
-SNR_goal = 100
+SNR_goal = 75
 
 addTag = ''
 
@@ -58,7 +58,7 @@ num_cpus_avail = 50
 if not add_noise:
     iterations = 1
 else:
-    iterations = 3
+    iterations = 10
 
 ############## Initializing Data ##########
 
@@ -145,6 +145,9 @@ if not apply_normalizer and not MB_model:
 
 if testCase:
     seriesTag = (seriesTag + "testCase" + "_")
+
+if model_selection:
+    seriesTag = (seriesTag + "BIC_filter" + "_")
 
 
 
@@ -351,7 +354,7 @@ def calculate_BIC(RSS, popt, sigma):
 
     BIC = 1/TDATA.shape[0] * (RSS + np.log(TDATA.shape[0]) * popt.shape[0]*(sigma)**2)
 
-    return RSS
+    return BIC
 
 ################## Parameter Estimation Functions ###############
 
