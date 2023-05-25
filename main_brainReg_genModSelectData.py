@@ -331,7 +331,8 @@ def check_param_order(popt, func):
 
 def calc_Radu_SNR(sig, est_curve):
     residuals = sig - est_curve
-    curve_std = np.max([np.std(residuals), 10**-16])
+    # curve_std = np.max([np.std(residuals), 10**-16])
+    curve_std = np.max([np.mean(residuals**2), 10**-20])
     return sig[0]/curve_std
 
 def calculate_RSS(data, popt, func):
@@ -352,7 +353,8 @@ def calculate_reg_RSS(data, popt, func, lam):
 
 def calculate_BIC(RSS, popt, sigma):
 
-    BIC = 1/TDATA.shape[0] * (RSS + np.log(TDATA.shape[0]) * popt.shape[0]*(sigma)**2)
+    # BIC = 1/TDATA.shape[0] * (RSS + np.log(TDATA.shape[0]) * popt.shape[0]*(sigma)**2)
+    BIC = len(TDATA) * np.log(RSS/len(TDATA)) + (len(popt)+1)*np.log(TDATA)
 
     return BIC
 
