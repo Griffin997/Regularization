@@ -32,18 +32,14 @@ import functools
 
 ############# Data Set Options & Hyperparameters ############
 
-add_noise = True              #True for a standard reference and False for a noise set
-add_mask = True                #Add a mask to the data - this mask eliminates data below a threshold (mas_amplitude)
+add_noise = False              #True for a standard reference and False for a noise set
+add_mask = False                #Add a mask to the data - this mask eliminates data below a threshold (mas_amplitude)
 apply_normalizer = True        #Normalizes the data during the processing step
 subsection = False              #Looks at a region a sixteenth of the full size
 multistart_method = False       #Applies a multistart method for each parameter fitting instance
-MB_model = False                #This model incoroporates the normalization and offset to a three parameter fit
-model_selection = False         #Compares monoX and biX to be able to choose fit process
-Rician_exp_opt = True           #Uses the expectation of Rician noise during the fit process
-testCase = False
-
-# The MB_model does the normalization as part of the algorithm
-if MB_model: assert(not apply_normalizer)
+MB_model = False
+model_selection = True         #Compares monoX and biX to be able to choose fit process
+testCase = True
 
 ############## Frequently Changed Parameters ###########
 
@@ -55,20 +51,20 @@ SNR_goal = 100
 addTag = ''
 
 #There are 8 cpus available on my personal computer
-num_cpus_avail = 50
+num_cpus_avail = 3
 
 if not add_noise:
     iterations = 1
 else:
-    iterations = 5
+    iterations = 2
 
 ############## Initializing Data ##########
 
-file_oi = "NESMA_cropped_slice5.mat"#"BIC_triTest.mat"#"NESMA_cropped_slice5.mat"
-folder_oi = "BLSA_1742_04_MCIAD_m41"#"BIC_tests"#"BLSA_1742_04_MCIAD_m41"
-specific_name = 'slice_oi'#"BIC_triTest"#'slice_oi' - this is important if the data strux has an internal name
+file_oi = "Ric_triTest.mat"#"BIC_triTest.mat"#"NESMA_cropped_slice5.mat"
+folder_oi = "BIC_tests"#"BIC_tests"#"BLSA_1742_04_MCIAD_m41"
+specific_name = 'Ric_triTest'#"BIC_triTest"#'slice_oi' - this is important if the data strux has an internal name
 
-output_folder = "ExperimentalSets"
+output_folder = "ExperimentalSets_Rician"
 try:
     brain_data = scipy.io.loadmat(os.getcwd() + f'\\MB_References\\{folder_oi}\\{file_oi}')
 except:
@@ -133,7 +129,7 @@ day = date.strftime('%d')
 month = date.strftime('%B')[0:3]
 year = date.strftime('%y')
 
-seriesTag = ""
+seriesTag = "RicExp_"
 if add_noise:
     seriesTag = (seriesTag + f"SNR_{SNR_goal}_")
 else:
@@ -142,7 +138,7 @@ else:
 if subsection:
     seriesTag = (seriesTag + f"subsection_")
 
-if not apply_normalizer and not MB_model:
+if not apply_normalizer:
     seriesTag = (seriesTag + "NoNorm" + "_")
 
 if testCase:
@@ -151,8 +147,6 @@ if testCase:
 if model_selection:
     seriesTag = (seriesTag + "BIC_filter" + "_")
 
-
-
 seriesTag = (seriesTag + addTag + day + month + year)
 
 seriesFolder = (os.getcwd() + f'/{output_folder}/{seriesTag}')
@@ -160,78 +154,44 @@ os.makedirs(seriesFolder, exist_ok = True)
 
 ############# Signal Functions ##############
 
-def G_biX_off(t, con_1, con_2, tau_1, tau_2, offSet): 
-    signal = con_1*np.exp(-t/tau_1) + con_2*np.exp(-t/tau_2) + offSet
-    return signal
-
-def G_moX_off(t, con, tau, offSet): 
-    signal = con*np.exp(-t/tau) + offSet
-    return signal
-
-def G_biX(t, con_1, con_2, tau_1, tau_2): 
+def G_biX_Ric(t, con_1, con_2, tau_1, tau_2, sigma): 
     signal = con_1*np.exp(-t/tau_1) + con_2*np.exp(-t/tau_2)
-    return signal
-
-def G_moX(t, con, tau): 
-    signal = con*np.exp(-t/tau)
-    return signal
-
-def G_MB(t, alpha, beta, tau_1, tau_2, offSet):
-    function = alpha*(beta*np.exp(-t/tau_1) + (1-beta)*np.exp(-t/tau_2)) + offSet
-    return function
-
-def exp_Rician(t, func, sigma, params):
-    alpha=(func(t, *params)/(2*sigma))**2
+    alpha=(signal/(2*sigma))**2
     Expectation = sigma*np.sqrt(np.pi/2)*((1+2*alpha)*special.ive(0, alpha) + 2*alpha*special.ive(1,alpha))
-    return Expectation    
+    return Expectation
+
+def G_moX_Ric(t, con, tau, sigma): 
+    signal = con*np.exp(-t/tau)
+    alpha=(signal/(2*sigma))**2
+    Expectation = sigma*np.sqrt(np.pi/2)*((1+2*alpha)*special.ive(0, alpha) + 2*alpha*special.ive(1,alpha))
+    return Expectation 
 
 def Rician_sigma(data):
     noise_floor = np.mean(data[-3:])
     sigma = np.sqrt(2/np.pi)*noise_floor
     return sigma
 
-def G_reg(lam, func, SA = 1, sigma = 1):
+def G_reg(lam, func, sigma, SA = 1):
     #SA defines the signal amplitude, defaults to 1 with assumed normalized data
     #Regularization is only applied to biexponential data
-    f_name = func.__name__
-    if Rician_exp_opt:
-        def Gt_lam(t, con_1, con_2, tau_1, tau_2):
-            params = [con_1, con_2, tau_1, tau_2]
-            param_stack = [lam*con_1/SA, lam*con_2/SA, lam*tau_1/ob_weight, lam*tau_2/ob_weight]
-            return np.append(exp_Rician(t, G_biX, sigma, params), param_stack)
-    elif 'biX' in f_name:
-        def Gt_lam(t, con_1, con_2, tau_1, tau_2, offSet):
-            param_stack = [lam*con_1/SA, lam*con_2/SA, lam*tau_1/ob_weight, lam*tau_2/ob_weight]
-            return np.append(G_biX_off(t, con_1, con_2, tau_1, tau_2, offSet), param_stack)
-    elif 'MB' in f_name:
-        def Gt_lam(t, alpha, beta, tau1, tau2, oS):
-            param_stack = [lam*alpha/SA, lam*beta, lam*tau1/ob_weight, lam*tau2/ob_weight]
-            return np.append(G_MB(t, alpha, beta, tau1, tau2, oS), param_stack)
-    else:
-        raise Exception("Not a valid function: " + f_name)
+    
+    def Gt_lam(t, con_1, con_2, tau_1, tau_2):
+        param_stack = [lam*con_1/SA, lam*con_2/SA, lam*tau_1/ob_weight, lam*tau_2/ob_weight]
+        return np.append(G_biX_Ric(t, con_1, con_2, tau_1, tau_2, sigma), param_stack)
+
     return Gt_lam
 
 def G_reg_param(lam, func, popt, SA = 1):
     #SA defines the signal amplitude, defaults to 1 with assumed normalized data
     #Regularization is only applied to biexponential data
-    f_name = func.__name__
-    if 'biX' in f_name:
-        param_stack = popt[:4]*np.array([lam/SA, lam/SA, lam/ob_weight, lam/ob_weight])
-    elif 'MB' in f_name:
-        param_stack = popt[:4]*np.array([lam/SA, lam, lam/ob_weight, lam/ob_weight])
-    else:
-        raise Exception("Not a valid function: " + f_name)
+
+    param_stack = popt[:4]*np.array([lam/SA, lam/SA, lam/ob_weight, lam/ob_weight])
+
     return param_stack
 
 ############# Selecting Function ###############
 
-if MB_model:
-    model_oi = G_MB
-else:
-    if Rician_exp_opt:
-        model_oi = G_biX
-    else:
-        model_oi = G_biX_off
+model_oi = G_biX_Ric
 
 ############# Data Processing Functions ##############
 
@@ -304,19 +264,14 @@ def get_param_p0(func, sig_init = 1, rand_opt = multistart_method):
        
     if 'biX' in f_name:
         if rand_opt:
-            init_p0 = [sig_init*0.2, sig_init*0.8, 20, 80, 1]
+            init_p0 = [sig_init*0.2, sig_init*0.8, 20, 80]
         else:
-            init_p0 = [sig_init*0.2, sig_init*0.8, 20, 80, 1]
+            init_p0 = [sig_init*0.2, sig_init*0.8, 20, 80]
     elif 'moX' in f_name:
         if rand_opt:
-            init_p0 = [sig_init, 20, 1]
+            init_p0 = [sig_init, 20]
         else:
-            init_p0 = [sig_init, 20, 1]
-    elif 'MB' in f_name:
-        if rand_opt:
-            init_p0 = [sig_init, 0.2, 20, 80, 1]
-        else:
-            init_p0 = [sig_init, 0.2, 20, 80, 1]
+            init_p0 = [sig_init, 20]
     else:
         raise Exception("Not a valid function: " + f_name)
 
@@ -328,11 +283,9 @@ def get_upperBound(func, sig_init = 1):
     f_name = func.__name__
        
     if 'biX' in f_name:
-        init_p0 = [0.75*sig_init, 2*sig_init, 80, 300, np.inf]
+        init_p0 = [0.75*sig_init, 2*sig_init, 80, 300]
     elif 'moX' in f_name:
-        init_p0 = [1.5*sig_init, 300, np.inf]
-    elif 'MB' in f_name:
-        init_p0 = [np.inf, 0.5, 80, 2000, np.inf]
+        init_p0 = [1.5*sig_init, 300]
     else:
         raise Exception("Not a valid function: " + f_name)
 
@@ -347,6 +300,9 @@ def check_param_order(popt, func):
     if 'off' in f_name:
         num = -1
 
+    if 'Ric' in f_name:
+        num = -1
+
     if 'MB' in f_name:
         return popt
 
@@ -359,7 +315,6 @@ def check_param_order(popt, func):
 
 def calc_Radu_SNR(sig, est_curve):
     residuals = sig - est_curve
-    # curve_std = np.max([np.std(residuals), 10**-16])
     curve_std = np.max([np.mean(residuals**2), 10**-20])
     return sig[0]/curve_std
 
@@ -379,9 +334,8 @@ def calculate_reg_RSS(data, popt, func, lam):
 
     return RSS + param_RSS
 
-def calculate_BIC(RSS, popt, sigma):
+def calculate_BIC(RSS, popt):
 
-    # BIC = 1/TDATA.shape[0] * (RSS + np.log(TDATA.shape[0]) * popt.shape[0]*(sigma)**2)
     BIC = len(TDATA) * np.log(RSS/len(TDATA)) + (len(popt)+1)*np.log(len(TDATA))
 
     return BIC
@@ -393,16 +347,17 @@ def single_reg_param_est(data, lam, func):
     init_p = get_param_p0(func, sig_init = data[0])
     upper_bound = get_upperBound(func)
     lower_bound = np.zeros(len(upper_bound))
-    parameter_tail = np.zeros(len(upper_bound)-1)
+    parameter_tail = np.zeros(4) #may need to make this adjustabale in the future
     data_tilde = np.append(data, parameter_tail) # Adds zeros to the end of the regularization array for the param estimation
-    
+    sigma_est = Rician_sigma(data)
+
     try:
-        popt, _ = curve_fit(G_reg(lam, func, SA = data_tilde[0]), TDATA, data_tilde, bounds = (lower_bound, upper_bound), p0=init_p, max_nfev = 4000)
+        popt, _ = curve_fit(G_reg(lam, func, sigma_est, SA = data_tilde[0]), TDATA, data_tilde, bounds = (lower_bound, upper_bound), p0=init_p, max_nfev = 4000)
     except Exception as error:
-        popt = [0,0,1,1,0]
+        popt = [0,0,1,1]
         print("Error in parameter fitting: " + str(error))
 
-    return popt
+    return np.append(popt, sigma_est)
 
 def perform_multi_estimates(data, lam, func, n_initials = num_multistarts):
     #Pick n_initials random initial conditions within the bound, and choose the one giving the lowest model-data mismatch residual
@@ -430,27 +385,29 @@ def perform_multi_estimates(data, lam, func, n_initials = num_multistarts):
 
 def BIC_filter(data):
 
-    biX_upperBounds = get_upperBound(G_biX_off)
-    moX_upperBounds = get_upperBound(G_moX_off)
+    biX_upperBounds = get_upperBound(G_biX_Ric)
+    moX_upperBounds = get_upperBound(G_moX_Ric)
 
     biX_lowerBounds = np.zeros(len(biX_upperBounds))
     moX_lowerBounds = np.zeros(len(moX_upperBounds))
 
-    biX_initP = get_param_p0(G_biX_off, sig_init = data[0])
-    moX_initP = get_param_p0(G_moX_off, sig_init = data[0])
+    biX_initP = get_param_p0(G_biX_Ric, sig_init = data[0])
+    moX_initP = get_param_p0(G_moX_Ric, sig_init = data[0])
 
-    G_biX_off_params, _ = curve_fit(G_biX_off, TDATA, data, bounds = (biX_lowerBounds, biX_upperBounds), p0=biX_initP, max_nfev = 4000)
-    G_moX_off_params, _ = curve_fit(G_moX_off, TDATA, data, bounds = (moX_lowerBounds, moX_upperBounds), p0=moX_initP, max_nfev = 4000)
+    sigma_est = Rician_sigma(data)
+    G_biX_params, _ = curve_fit(functools.partial(G_biX_Ric, sigma = sigma_est), TDATA, data, bounds = (biX_lowerBounds, biX_upperBounds), p0=biX_initP, max_nfev = 4000)
+    G_moX_params, _ = curve_fit(functools.partial(G_moX_Ric, sigma = sigma_est), TDATA, data, bounds = (moX_lowerBounds, moX_upperBounds), p0=moX_initP, max_nfev = 4000)
 
-    curve_SNR = calc_Radu_SNR(data, G_biX_off(TDATA, *G_biX_off_params))
+    G_biX_params = np.append(G_biX_params, sigma_est)
+    G_moX_params = np.append(G_moX_params, sigma_est)
 
-    RSS_biX = calculate_RSS(data, G_biX_off_params, G_biX_off)
-    RSS_moX = calculate_RSS(data, G_moX_off_params, G_moX_off)
+    RSS_biX = calculate_RSS(data, G_biX_params, G_biX_Ric)
+    RSS_moX = calculate_RSS(data, G_moX_params, G_moX_Ric)
 
-    BIC_G_biX = calculate_BIC(RSS_biX, G_biX_off_params, data[0]/curve_SNR)
-    BIC_G_moX = calculate_BIC(RSS_moX, G_moX_off_params, data[0]/curve_SNR)
+    BIC_G_biX = calculate_BIC(RSS_biX, G_biX_params)
+    BIC_G_moX = calculate_BIC(RSS_moX, G_moX_params)
 
-    return BIC_G_moX < BIC_G_biX, G_moX_off_params, BIC_G_moX
+    return BIC_G_moX < BIC_G_biX, G_moX_params, BIC_G_moX
 
 
 def main_estimator(i_voxel, full_brain_data, func):
@@ -471,7 +428,7 @@ def main_estimator(i_voxel, full_brain_data, func):
     
     ##### Flag for model selection
     if model_selection:
-        BIC_boolean, G_moX_off_params, RSS_moX = BIC_filter(data)
+        BIC_boolean, G_moX_params, RSS_moX = BIC_filter(data)
     else:
         BIC_boolean = False
 
@@ -481,7 +438,7 @@ def main_estimator(i_voxel, full_brain_data, func):
         # elem_lis.append(feature_df)
 
         # lam_df = pd.DataFrame(columns = ["Params", "RSS"])
-        feature_df["Params"] = [G_moX_off_params]
+        feature_df["Params"] = [G_moX_params]
         feature_df["RSS"] = [RSS_moX]
         # elem_lis.append(lam_df)
     else:
