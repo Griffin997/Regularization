@@ -45,7 +45,7 @@ m41_data.slice.T2l = T2l_slice;
 m41_data.slice.T2s = T2s_slice;
 m41_data.slice.MWF = MWF_slice;
 
-save(strcat('m41_dataStruct_slice',string(s_num),'_iter2_300T22.mat'), '-struct', 'm41_data');
+save(strcat('m41_dataStruct_slice',string(s_num).mat'), '-struct', 'm41_data');
 
 %%
 
@@ -78,6 +78,16 @@ subplot(131);imagesc(MWF_slice(:,:) - MWF_raw(:,:,s_num),[-0.4 0.4]);colormap je
 subplot(132);imagesc(T2s_slice(:,:) - T2s_raw(:,:,s_num),[-60 60]);colormap jet; axis off;colorbar;title('T2s (ms)');
 subplot(133);imagesc(T2l_slice(:,:) - T2l_raw(:,:,s_num),[-140 140]);colormap jet; axis off;colorbar;title('T2l (ms)');
 sgtitle(strcat("Raw Difference Data - m41 - slice ", string(s_num)))
+
+%% Comparison of MWF
+
+figure;
+subplot(121);
+imagesc(MWF_NESMA(:,:,s_num))
+title("NESMA Brain MWF")
+subplot(122);
+imagesc(MWF_raw(:,:,s_num))
+title("Raw Brain MWF")
 
 %%
 
