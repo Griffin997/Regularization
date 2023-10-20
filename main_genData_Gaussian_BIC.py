@@ -38,7 +38,7 @@ apply_normalizer = True        #Normalizes the data during the processing step
 subsection = False              #Looks at a region a sixteenth of the full size
 multistart_method = False       #Applies a multistart method for each parameter fitting instance
 MB_model = False                #This model incoroporates the normalization and offset to a three parameter fit
-model_selection = True         #Compares monoX and biX to be able to choose fit process
+model_selection = False         #Compares monoX and biX to be able to choose fit process
 testCase = False
 
 # The MB_model does the normalization as part of the algorithm
