@@ -36,7 +36,7 @@ with open('SimulationSets//standardNoise_' + noise_date_oi + '.pkl', 'rb') as ha
     noise_mat = np.array(noise_mat)
 handle.close()
 
-SNR_mat = [20]
+SNR_mat = [20, 50, 100, 500]
 n_elements = 128
 #Weighting term to ensure the c_i and T2_i are roughly the same magnitude
 ob_weight = 100
@@ -44,7 +44,7 @@ n_noise_realizations = 500 #500
 
 num_multistarts = 10
 
-num_cpus = 60
+
 
 agg_weights = np.array([1, 1, 1/ob_weight, 1/ob_weight])
 
@@ -53,10 +53,10 @@ lower_bound = [0,0,0,0]
 # initial = (0.5, 0.5, 30, 150) #Set initial guesses
 
 tdata = np.linspace(0, 635, n_elements)
-lambdas = np.append(0, np.logspace(-7,1,51))
+lambdas = np.append(0, np.logspace(-7,3,51))
 
 # Parameters Loop Through
-c1_set = [0, 0.2, 0.4, 0.5, 0.6, 0.8, 1.0]
+c1_set = [0, 0.05, 0.2, 0.4, 0.5, 0.6, 0.8, 0.95, 1.0]
 c2_set = 1-np.array(c1_set)
 T21_set = [10,20,30,40,50]
 T22_set = [70,90,110,130,150]
@@ -91,6 +91,8 @@ def construct_paramList(c1_list, T21_list, T22_list):
 
 ### Needed to process ASAP
 target_iterator = construct_paramList(c1_set, T21_set, T22_set)
+
+num_cpus = np.min([60, len(target_iterator)])
 
 def check_param_order(popt):
     #Reshaping of array to ensure that the parameter pairs all end up in the appropriate place - ensures that T22 > T21
