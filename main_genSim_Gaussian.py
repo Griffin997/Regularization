@@ -53,7 +53,7 @@ lower_bound = [0,0,0,0]
 # initial = (0.5, 0.5, 30, 150) #Set initial guesses
 
 tdata = np.linspace(0, 635, n_elements)
-lambdas = np.append(0, np.logspace(-7,3,51))
+lambdas = np.append(0, np.logspace(-7,1,51))
 
 # Parameters Loop Through
 c1_set = [0, 0.05, 0.2, 0.4, 0.5, 0.6, 0.8, 0.95, 1.0]
