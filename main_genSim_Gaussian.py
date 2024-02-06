@@ -36,7 +36,7 @@ with open('SimulationSets//standardNoise_' + noise_date_oi + '.pkl', 'rb') as ha
     noise_mat = np.array(noise_mat)
 handle.close()
 
-SNR_mat = [200]
+SNR_mat = [20, 50, 100, 500]
 n_elements = 128
 #Weighting term to ensure the c_i and T2_i are roughly the same magnitude
 ob_weight = 100
@@ -44,16 +44,19 @@ n_noise_realizations = 500 #500
 
 num_multistarts = 10
 
+
+
 agg_weights = np.array([1, 1, 1/ob_weight, 1/ob_weight])
 
 upper_bound = [2,2,100,300] #Set upper bound on parameters c1, c2, T21, T22, respectively
+lower_bound = [0,0,0,0]
 # initial = (0.5, 0.5, 30, 150) #Set initial guesses
 
 tdata = np.linspace(0, 635, n_elements)
 lambdas = np.append(0, np.logspace(-7,1,51))
 
 # Parameters Loop Through
-c1_set = [0, 0.2, 0.4, 0.5, 0.6, 0.8, 1.0]
+c1_set = [0, 0.05, 0.2, 0.4, 0.5, 0.6, 0.8, 0.95, 1.0]
 c2_set = 1-np.array(c1_set)
 T21_set = [10,20,30,40,50]
 T22_set = [70,90,110,130,150]
@@ -89,6 +92,8 @@ def construct_paramList(c1_list, T21_list, T22_list):
 ### Needed to process ASAP
 target_iterator = construct_paramList(c1_set, T21_set, T22_set)
 
+num_cpus = np.min([60, len(target_iterator)])
+
 def check_param_order(popt):
     #Reshaping of array to ensure that the parameter pairs all end up in the appropriate place - ensures that T22 > T21
     if (popt[-1] < popt[-2]): #We want by convention to make sure that T21 is <= T22
@@ -102,54 +107,32 @@ def estimate_parameters(data, lam, n_initials = num_multistarts):
     #Pick n_initials random initial conditions within the bound, and choose the one giving the lowest model-data mismatch residual
     random_residuals = np.empty(n_initials)
     estimates = np.zeros((n_initials,4))
-    data_start = np.abs(data[0])
+    # data_start = np.abs(data[0])
     data_tilde = np.append(data, [0,0,0,0]) # Adds zeros to the end of the regularization array for the param estimation
     
     for i in range(n_initials):
         np.random.seed(i)
         ic1 = np.random.uniform(0,1)
         ic2 = 1-ic1
-        ic1 = ic1*data_start
-        ic2 = ic2*data_start
-        iT21 = np.random.uniform(0,upper_bound[-2])
+        ic1 = ic1#*data_start
+        ic2 = ic2#*data_start
+        iT21 = np.random.uniform(1,upper_bound[-2])
         iT22 = np.random.uniform(iT21,upper_bound[-1])
         p0 = [ic1,ic2,iT21,iT22]
-        up_bnd = upper_bound*np.array([data_start, data_start, 1, 1])
-        assert(np.size(up_bnd) == np.size(p0))
+        # up_bnd = upper_bound*np.array([data_start, data_start, 1, 1])
+        # assert(np.size(up_bnd) == np.size(p0))
         
         try:
-            popt, _ = curve_fit(G_tilde(lam), tdata, data_tilde, bounds = (0, up_bnd), p0=p0, max_nfev = 4000)
+            popt, _, info_popt, _, _ = curve_fit(G_tilde(lam), tdata, data_tilde, bounds = (lower_bound, upper_bound), p0=p0, max_nfev = 4000, full_output = True)
         except:
             popt = [0,0,1,1]
             print("Max feval reached")
         
-        c1_ret, c2_ret, T21_ld, T22_ld = popt
-        
-        # Enforces T21 <= T22
-        if T21_ld.size == 1:
-            T21_ld = T21_ld.item()
-            T22_ld = T22_ld.item()
-            c1_ret = c1_ret.item()
-            c2_ret = c2_ret.item()
+        estimates[i,:] = check_param_order(popt)#Require T22>T21
 
-        
-        if T21_ld > T22_ld:
-            T21_ld_new = T22_ld
-            T22_ld = T21_ld
-            T21_ld = T21_ld_new
-            c1_ret_new = c1_ret
-            c1_ret = c2_ret
-            c2_ret = c1_ret_new
-
-            assert (T21_ld != T22_ld)
-
-        # popt = check_param_order(popt) #Require T22>T21
-        estimates[i] = np.array([c1_ret, c2_ret, T21_ld, T22_ld])
-        estimated_model = G(tdata, *popt)
-        residual = np.sum((estimated_model - data)**2)
-        random_residuals[i] = residual
+        random_residuals[i] = np.sum(info_popt['fvec']**2)
     min_residual_idx = np.argmin(random_residuals)
-    min_residual_estimates = estimates[min_residual_idx]
+    min_residual_estimates = estimates[min_residual_idx,:]
  
     return min_residual_estimates
 
@@ -184,13 +167,10 @@ for iSNR in SNR_mat:    #Loop through different SNR values
 
         print("Finished Assignments...")
 
-        num_cpus_avail = 80
-        print("Using Super Computer")
-
         print(f"Building {iSNR} Dataset...")
         lis = []
 
-        with mp.Pool(processes = num_cpus_avail) as pool:
+        with mp.Pool(processes = num_cpus) as pool:
 
             with tqdm(total=target_iterator.shape[0]) as pbar:
                 for estimates_dataframe in pool.imap_unordered(generate_all_estimates, range(target_iterator.shape[0])):
