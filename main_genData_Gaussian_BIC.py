@@ -49,7 +49,7 @@ if MB_model: assert(not apply_normalizer)
 n_lambdas = 101
 lambdas = np.append(0, np.logspace(-5,1, n_lambdas))
 
-SNR_goal = 100
+SNR_goal = 50
 
 addTag = ''
 
