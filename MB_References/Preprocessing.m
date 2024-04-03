@@ -21,7 +21,7 @@ load(strcat(directory_name,"\",file_name,'\', NESMA_name)); %loads as I4D_NESMA
 load(strcat(directory_name,"\",file_name,'\', raw_name)); %loads as I4D_raw
 
 save_file = true;
-slice_focus = 8;
+slice_focus = 3;
 
 [n_vert, n_hori, n_slices, n_elem] = size(I4D_NESMA);
 
