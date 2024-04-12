@@ -78,3 +78,5 @@ T2l_raw = raw.T2l;
 T2s_raw = raw.T2s;
 MWF_raw = raw.MWF;
 
+%%
+imagesc(MWF(:,:,slice), [0 0.4]); axis off; axis equal;
