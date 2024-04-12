@@ -14,14 +14,14 @@
 
 % Choose the data set to download and load file name
 directory_name = "MB_References";
-file_name = "BLSA_1742_04_MCIAD_m41";
+file_name = "BLSA_1935_06_MCIAD_m79";
 NESMA_name = "I4D_NESMA.mat";
 raw_name = "I4D_raw.mat";
 load(strcat(directory_name,"\",file_name,'\', NESMA_name)); %loads as I4D_NESMA
 load(strcat(directory_name,"\",file_name,'\', raw_name)); %loads as I4D_raw
 
 save_file = true;
-slice_focus = 3;
+slice_focus = 5;
 
 [n_vert, n_hori, n_slices, n_elem] = size(I4D_NESMA);
 
