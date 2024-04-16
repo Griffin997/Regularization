@@ -42,16 +42,18 @@ end
 
 %%
 s=5;
-figure;
-subplot(131);imagesc(MWF_NESMA(:,:,s),[0 0.4]);colormap jet; axis off;colorbar;title('MWF (n.u.)');
-subplot(132);imagesc(T2s_NESMA(:,:,s),[0 60]);colormap jet; axis off;colorbar;title('T2s (ms)');
-subplot(133);imagesc(T2l_NESMA(:,:,s),[0 140]);colormap jet; axis off;colorbar;title('T2l (ms)');
+f = figure;
+f.Position = [400,300,1300,400];
+subplot(131);imagesc(MWF_NESMA(:,:,s),[0 0.4]);colormap hot; axis off;colorbar;title('MWF (n.u.)');
+subplot(132);imagesc(T2s_NESMA(:,:,s),[0 60]);colormap hot; axis off;colorbar;title('T2s (ms)');
+subplot(133);imagesc(T2l_NESMA(:,:,s),[0 140]);colormap hot; axis off;colorbar;title('T2l (ms)');
 sgtitle(strcat("NESMA Data - m41 - slice ", string(s), " (1-10)"))
 
-figure;
-subplot(131);imagesc(MWF_raw(:,:,s),[0 0.4]);colormap jet; axis off;colorbar;title('MWF (n.u.)');
-subplot(132);imagesc(T2s_raw(:,:,s),[0 60]);colormap jet; axis off;colorbar;title('T2s (ms)');
-subplot(133);imagesc(T2l_raw(:,:,s),[0 140]);colormap jet; axis off;colorbar;title('T2l (ms)');
+f = figure;
+f.Position = [400,300,1300,400];
+subplot(131);imagesc(MWF_raw(:,:,s),[0 0.4]);colormap hot; axis off;colorbar;title('MWF (n.u.)');
+subplot(132);imagesc(T2s_raw(:,:,s),[0 60]);colormap hot; axis off;colorbar;title('T2s (ms)');
+subplot(133);imagesc(T2l_raw(:,:,s),[0 140]);colormap hot; axis off;colorbar;title('T2l (ms)');
 sgtitle(strcat("Raw Data - m41 - slice ", string(s), " (1-10)"))
 
 %% 
@@ -64,6 +66,8 @@ m41_data.raw.MWF = MWF_raw;
 m41_data.NESMA.T2l = T2l_NESMA;
 m41_data.NESMA.T2s = T2s_NESMA;
 m41_data.NESMA.MWF = MWF_NESMA;
+
+%%
 
 save('m41_dataStruct.mat', '-struct', 'm41_data');
 
@@ -79,4 +83,5 @@ T2s_raw = raw.T2s;
 MWF_raw = raw.MWF;
 
 %%
-imagesc(MWF(:,:,slice), [0 0.4]); axis off; axis equal;
+slice = 5;
+imagesc(NESMA.MWF(:,:,slice), [0 0.4]); axis off; axis equal;
