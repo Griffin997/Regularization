@@ -37,12 +37,8 @@ add_mask = True                #Add a mask to the data - this mask eliminates da
 apply_normalizer = True        #Normalizes the data during the processing step
 subsection = False              #Looks at a region a sixteenth of the full size
 multistart_method = False       #Applies a multistart method for each parameter fitting instance
-MB_model = False                #This model incoroporates the normalization and offset to a three parameter fit
 model_selection = True         #Compares monoX and biX to be able to choose fit process
 testCase = False
-
-# The MB_model does the normalization as part of the algorithm
-if MB_model: assert(not apply_normalizer)
 
 ############## Frequently Changed Parameters ###########
 
@@ -141,7 +137,7 @@ else:
 if subsection:
     seriesTag = (seriesTag + f"subsection_")
 
-if not apply_normalizer and not MB_model:
+if not apply_normalizer:
     seriesTag = (seriesTag + "NoNorm" + "_")
 
 if testCase:
@@ -167,9 +163,7 @@ def G_moX_off(t, con, tau, offSet):
     signal = con*np.exp(-t/tau) + offSet
     return signal
 
-def G_MB(t, alpha, beta, tau_1, tau_2, offSet):
-    function = alpha*(beta*np.exp(-t/tau_1) + (1-beta)*np.exp(-t/tau_2)) + offSet
-    return function
+
 
 def G_reg(lam, func, SA = 1):
     #SA defines the signal amplitude, defaults to 1 with assumed normalized data
@@ -179,10 +173,6 @@ def G_reg(lam, func, SA = 1):
         def Gt_lam(t, con_1, con_2, tau_1, tau_2, offSet):
             param_stack = [lam*con_1/SA, lam*con_2/SA, lam*tau_1/ob_weight, lam*tau_2/ob_weight]
             return np.append(G_biX_off(t, con_1, con_2, tau_1, tau_2, offSet), param_stack)
-    elif 'MB' in f_name:
-        def Gt_lam(t, alpha, beta, tau1, tau2, oS):
-            param_stack = [lam*alpha/SA, lam*beta, lam*tau1/ob_weight, lam*tau2/ob_weight]
-            return np.append(G_MB(t, alpha, beta, tau1, tau2, oS), param_stack)
     else:
         raise Exception("Not a valid function: " + f_name)
     return Gt_lam
@@ -193,18 +183,13 @@ def G_reg_param(lam, func, popt, SA = 1):
     f_name = func.__name__
     if 'biX' in f_name:
         param_stack = popt[:4]*np.array([lam/SA, lam/SA, lam/ob_weight, lam/ob_weight])
-    elif 'MB' in f_name:
-        param_stack = popt[:4]*np.array([lam/SA, lam, lam/ob_weight, lam/ob_weight])
     else:
         raise Exception("Not a valid function: " + f_name)
     return param_stack
 
 ############# Selecting Function ###############
 
-if MB_model:
-    model_oi = G_MB
-else:
-    model_oi = G_biX_off
+model_oi = G_biX_off
 
 ############# Data Processing Functions ##############
 
@@ -285,11 +270,6 @@ def get_param_p0(func, sig_init = 1, rand_opt = multistart_method):
             init_p0 = [sig_init, 20, 1]
         else:
             init_p0 = [sig_init, 20, 1]
-    elif 'MB' in f_name:
-        if rand_opt:
-            init_p0 = [sig_init, 0.2, 20, 80, 1]
-        else:
-            init_p0 = [sig_init, 0.2, 20, 80, 1]
     else:
         raise Exception("Not a valid function: " + f_name)
 
@@ -304,8 +284,6 @@ def get_upperBound(func, sig_init = 1):
         init_p0 = [0.75*sig_init, 2*sig_init, 80, 300, np.inf]
     elif 'moX' in f_name:
         init_p0 = [1.5*sig_init, 300, np.inf]
-    elif 'MB' in f_name:
-        init_p0 = [np.inf, 0.5, 80, 2000, np.inf]
     else:
         raise Exception("Not a valid function: " + f_name)
 
@@ -319,9 +297,6 @@ def check_param_order(popt, func):
     num = 0
     if 'off' in f_name:
         num = -1
-
-    if 'MB' in f_name:
-        return popt
 
     if (popt[-2+num] > popt[-1+num]): #We want by convention to make sure that T21 is <= T22
         for i in range(popt.shape[0]//2):
