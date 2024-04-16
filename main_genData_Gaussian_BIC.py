@@ -59,15 +59,20 @@ else:
 
 ############## Initializing Data ##########
 
-file_oi = "NESMA_cropped_slice5.mat"#"BIC_triTest.mat"#"NESMA_cropped_slice5.mat"
-folder_oi = "BLSA_1742_04_MCIAD_m41"#"BIC_tests"#"BLSA_1742_04_MCIAD_m41"
+slice_num = 3
+slice_oi = f"NESMA_cropped_slice{slice_num}.mat"#"BIC_triTest.mat"#"NESMA_cropped_slice5.mat"
+pat_id = "BLSA_1742_04_MCIAD_m41"#"BIC_tests"#"BLSA_1742_04_MCIAD_m41"
 specific_name = 'slice_oi'#"BIC_triTest"#'slice_oi' - this is important if the data strux has an internal name
 
-output_folder = "ExperimentalSets"
+pat_tag = pat_id[-3:] #this tag will show up in the file name
+
+output_folder = f"ExperimentalSets/{pat_id}"
 try:
-    brain_data = scipy.io.loadmat(os.getcwd() + f'\\MB_References\\{folder_oi}\\{file_oi}')
+    brain_data = scipy.io.loadmat(os.getcwd() + f'\\MB_References\\{pat_id}\\{slice_oi}')
+    SNR_info_path = f'{os.getcwd()}\\MB_References\\{pat_id}\\SNR_info.pkl'
 except:
-    brain_data = scipy.io.loadmat(os.getcwd() + f'/MB_References/{folder_oi}/{file_oi}')
+    brain_data = scipy.io.loadmat(os.getcwd() + f'/MB_References/{pat_id}/{slice_oi}')
+    SNR_info_path = f'{os.getcwd()}/MB_References/{pat_id}/SNR_info.pkl'
 I_raw = brain_data[specific_name]
 
 if subsection:
@@ -86,9 +91,6 @@ target_iterator = np.array([item for item in itertools.product(np.arange(0,n_ver
 
 ############# Global Parameters ###############
 
-# all pixels with a lower mask amplitude are considered to be free water (i.e. vesicles)
-mask_amplitude = 750    #Might need to be greater
-
 ob_weight = 100
 
 if multistart_method:
@@ -96,7 +98,26 @@ if multistart_method:
 else:
     num_multistarts = 1
 
-############# Standard Region of Interest ###############
+############# SNR Information ###############
+
+isFile_SNR = os.path.isfile(SNR_info_path)
+
+if isFile:
+    print('Data was loaded in')
+    with open(path, 'rb') as handle:
+        dict = pickle.load(handle)
+        pat_id_check = dict["Patient_ID"]
+        sigma_slice = dict['slice_num']
+        sigma = dict['sigma']
+        vert1 = dict['vert1']
+        vert2 = dict['vert2']
+        hori1 = dict['hori1']
+        hori2 = dict['hori2']
+        sigma_SNR = dict['SNR']
+        # all pixels with a lower mask amplitude are considered to be free water (i.e. vesicles)
+        mask_amplitude = dict['mask_amplitude'] 
+        date_stamp = dict['date_stamp']
+        handle.close()
 
 SNR_collect = []
 
@@ -128,7 +149,7 @@ day = date.strftime('%d')
 month = date.strftime('%B')[0:3]
 year = date.strftime('%y')
 
-seriesTag = ""
+seriesTag = f"{pat_tag}_slice{slice_num}_"
 if add_noise:
     seriesTag = (seriesTag + f"SNR_{SNR_goal}_")
 else:
@@ -518,8 +539,8 @@ hprParams = {
     "SNR_goal": SNR_goal,
     'n_noise_realizations': iterations,
     'lambdas': lambdas,
-    "data_file": folder_oi,
-    "data_slice": file_oi,
+    "data_file": pat_id,
+    "data_slice": slice_oi,
     'tdata': TDATA,
     'ob_weight': ob_weight,
     'num_multistarts': num_multistarts,
