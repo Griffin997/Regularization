@@ -32,7 +32,7 @@ import functools
 
 ############# Data Set Options & Hyperparameters ############
 
-add_noise = True              #True for a standard reference and False for a noise set
+add_noise = False              #True for a standard reference and False for a noise set
 add_mask = True                #Add a mask to the data - this mask eliminates data below a threshold (mas_amplitude)
 apply_normalizer = True        #Normalizes the data during the processing step
 subsection = False              #Looks at a region a sixteenth of the full size
