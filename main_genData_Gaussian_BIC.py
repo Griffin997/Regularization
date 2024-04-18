@@ -59,7 +59,7 @@ else:
 
 ############## Initializing Data ##########
 
-slice_num = 3
+slice_num = 5
 slice_oi = f"NESMA_cropped_slice{slice_num}.mat"#"BIC_triTest.mat"#"NESMA_cropped_slice5.mat"
 pat_id = "BLSA_1742_04_MCIAD_m41"#"BIC_tests"#"BLSA_1742_04_MCIAD_m41"
 specific_name = 'slice_oi'#"BIC_triTest"#'slice_oi' - this is important if the data strux has an internal name
@@ -102,9 +102,9 @@ else:
 
 isFile_SNR = os.path.isfile(SNR_info_path)
 
-if isFile:
+if isFile_SNR:
     print('Data was loaded in')
-    with open(path, 'rb') as handle:
+    with open(SNR_info_path, 'rb') as handle:
         dict = pickle.load(handle)
         pat_id_check = dict["Patient_ID"]
         sigma_slice = dict['slice_num']
@@ -551,7 +551,7 @@ hprParams = {
     'n_horizontal': n_hori,
     'n_verticle': n_vert,
     'options': [add_noise, add_mask, apply_normalizer, 
-                subsection, MB_model, model_selection,
+                subsection, model_selection,
                 multistart_method, testCase],
     'SNR_array': SNR_collect
 }
