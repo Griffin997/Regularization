@@ -33,31 +33,33 @@ import functools
 ############# Data Set Options & Hyperparameters ############
 
 add_noise = False              #True for a standard reference and False for a noise set
-add_mask = True                #Add a mask to the data - this mask eliminates data below a threshold (mas_amplitude)
 apply_normalizer = True        #Normalizes the data during the processing step
-subsection = False              #Looks at a region a sixteenth of the full size
 multistart_method = False       #Applies a multistart method for each parameter fitting instance
 model_selection = True         #Compares monoX and biX to be able to choose fit process
-testCase = False
 
 ############## Frequently Changed Parameters ###########
 
 n_lambdas = 101
 lambdas = np.append(0, np.logspace(-5,1, n_lambdas))
 
-SNR_goal = 50
-
 addTag = ''
 
+SNR_oi = 100
+date_of_data = '18Apr24'
+
 #There are 8 cpus available on my personal computer
-num_cpus_avail = 60
+num_cpus_avail = 1
 
 if not add_noise:
     iterations = 1
 else:
-    iterations = 20
+    iterations = 1 #Check that this is at most the largest of the data set
 
-############## Initializing Data ##########
+############## Setting Files Data ##########
+
+cwd_temp = os.getcwd()
+base_file = 'Regularization'
+cwd_full = f'{cwd_temp.split(base_file, 1)[0]}{base_file}/'
 
 slice_num = 5
 slice_oi = f"NESMA_cropped_slice{slice_num}.mat"#"BIC_triTest.mat"#"NESMA_cropped_slice5.mat"
@@ -67,27 +69,11 @@ specific_name = 'slice_oi'#"BIC_triTest"#'slice_oi' - this is important if the d
 pat_tag = pat_id[-3:] #this tag will show up in the file name
 
 output_folder = f"ExperimentalSets/{pat_id}"
-try:
-    brain_data = scipy.io.loadmat(os.getcwd() + f'\\MB_References\\{pat_id}\\{slice_oi}')
-    SNR_info_path = f'{os.getcwd()}\\MB_References\\{pat_id}\\SNR_info.pkl'
-except:
-    brain_data = scipy.io.loadmat(os.getcwd() + f'/MB_References/{pat_id}/{slice_oi}')
-    SNR_info_path = f'{os.getcwd()}/MB_References/{pat_id}/SNR_info.pkl'
-I_raw = brain_data[specific_name]
 
-if subsection:
-    I_raw_vert = 5
-    I_raw_hori = 36
-    I_raw_extent = 60
-    I_raw = I_raw[I_raw_vert:I_raw_vert + I_raw_extent, I_raw_hori:I_raw_hori + I_raw_extent, :]
+SNR_info_path = f'{cwd_full}MB_References/{pat_id}/SNR_info.pkl'
 
-n_vert, n_hori, n_elements_brain = I_raw.shape
-
-t_increment_brain = 11.3 #This is a measurement originally indicated by Chuan Bi in the initial email about this data
-TDATA = np.linspace(t_increment_brain, (n_elements_brain)*(t_increment_brain), n_elements_brain)
-
-#This is how we will keep track of all voxels that are called
-target_iterator = np.array([item for item in itertools.product(np.arange(0,n_vert,1), np.arange(0,n_hori,1))])
+noise_iter_folder = f'{pat_tag}_slice{slice_num}_SNR{SNR_oi}_{date_of_data}'
+noise_iter_path = f'{cwd_full}Noise_Generation/Noise_Sets/{noise_iter_folder}/hprParameter.pkl'
 
 ############# Global Parameters ###############
 
@@ -101,6 +87,8 @@ else:
 ############# SNR Information ###############
 
 isFile_SNR = os.path.isfile(SNR_info_path)
+
+isFile_iter = os.path.isfile(noise_iter_path)
 
 if isFile_SNR:
     print('Data was loaded in')
@@ -117,30 +105,27 @@ if isFile_SNR:
         # all pixels with a lower mask amplitude are considered to be free water (i.e. vesicles)
         mask_amplitude = dict['mask_amplitude'] 
         date_stamp = dict['date_stamp']
+        n_vert = dict['n_vert']
+        n_hori = dict['n_hori']
+        n_elem = dict['n_elem']
         handle.close()
 
-SNR_collect = []
+if isFile_iter:
+    with open(noise_iter_path, 'rb') as handle:
+        dict = pickle.load(handle)
+        SNR_goal = dict["SNR_goal"]
+        SNR_desired = dict["SNR_desired"]
+        n_noise_realizations = dict["num_noise_realizations"]
+        noise_date_stamp = dict["noise_date_stamp"]
+        handle.close()
+    assert(noise_date_stamp == date_stamp)
+    assert(iterations <= n_noise_realizations)
 
-if testCase:
-    vert1 = 0
-    vert2 = 9
-    hori1 = 0
-    hori2 = 9
-elif subsection:
-    vert1 = 33
-    vert2 = 43
-    hori1 = 25
-    hori2 = 59
-else:
-    vert1 = 92             #60     #108
-    vert2 = 110            #125     #116
-    hori1 = 75            #100      #86
-    hori2 = 130            #115      #93
+t_increment_brain = 11.3 #This is a measurement originally indicated by Chuan Bi in the initial email about this data
+TDATA = np.linspace(t_increment_brain, (n_elem)*(t_increment_brain), n_elem)
 
-vBox = (vert1,vert1,vert2,vert2,vert1)
-hBox = (hori1,hori2,hori2,hori1,hori1)
-
-noiseRegion = [vert1,vert2,hori1,hori2]
+#This is how we will keep track of all voxels that are called
+target_iterator = np.array([item for item in itertools.product(np.arange(0,n_vert,1), np.arange(0,n_hori,1))])
 
 ####### File Naming Section #########
 
@@ -151,27 +136,20 @@ year = date.strftime('%y')
 
 seriesTag = f"{pat_tag}_slice{slice_num}_"
 if add_noise:
-    seriesTag = (seriesTag + f"SNR_{SNR_goal}_")
+    seriesTag = (seriesTag + f"SNR_{SNR_oi}_")
 else:
     seriesTag = (seriesTag + f"NoNoise_")
-
-if subsection:
     seriesTag = (seriesTag + f"subsection_")
 
 if not apply_normalizer:
     seriesTag = (seriesTag + "NoNorm" + "_")
 
-if testCase:
-    seriesTag = (seriesTag + "testCase" + "_")
-
 if model_selection:
     seriesTag = (seriesTag + "BIC_filter" + "_")
 
-
-
 seriesTag = (seriesTag + addTag + day + month + year)
 
-seriesFolder = (os.getcwd() + f'/{output_folder}/{seriesTag}')
+seriesFolder = (f'{cwd_full}/{output_folder}/{seriesTag}')
 os.makedirs(seriesFolder, exist_ok = True)
 
 ############# Signal Functions ##############
@@ -214,31 +192,11 @@ model_oi = G_biX_off
 
 ############# Data Processing Functions ##############
 
-def mask_data(raw, mask_amplitude):
+def mask_data(raw, mask_amp):
     #Sets every decay curve in the data set where the amplitude is less than a threshold value to zero
     I_masked = np.copy(raw)
-    I_masked[I_masked[:,:,0]<mask_amplitude] = 0
+    I_masked[I_masked[:,:,0]<mask_amp] = 0
     return I_masked
-
-def calculate_brain_SNR(raw, region):
-    #calculates the SNR of the brain using a homogenous region fed into the 
-    v1,v2,h1,h2 = region
-
-    rawZone = raw[v1:v2,h1:h2,:]
-
-    regionZero = rawZone[:, :, 0]
-    regionZero_mean = np.mean(regionZero)
-
-    regionEnd = rawZone[:, :, -3:] #last three points across the entire sampled region
-    regionEnd_std = np.std(regionEnd)
-    regionEnd_absMean = np.mean(np.abs(regionEnd))
-
-    if regionEnd_std == 0:
-        SNR_region = np.inf
-    else:
-        SNR_region = (regionZero_mean - regionEnd_absMean)/regionEnd_std
-
-    return SNR_region
 
 def normalize_brain(I_data):
     n_vert, n_hori, n_elem = I_data.shape
@@ -249,32 +207,10 @@ def normalize_brain(I_data):
             if data[0]>0:
                 data_normalized = data/(data[0])
             else:
-                data_normalized = np.zeros(n_elements_brain)
+                data_normalized = np.zeros(n_elem)
             I_normalized[i_vert,i_hori,:] = data_normalized
     return I_normalized
 
-def add_noise_brain_uniform(raw, SNR_desired, region, I_mask_factor, noise_seed):
-    #This function was built with the intention of taking a region (e.g. the homogenous region to the right of the ventricles)
-    #Add noise to make sure the final SNR is close to the desired SNR
-
-    np.random.seed(noise_seed)
-
-    v1,v2,h1,h2 = region
-
-    rawZone = raw[v1:v2,h1:h2,:]
-
-    regionZero = rawZone[:, :, 0]
-    sigRef = np.mean(regionZero)
-
-    regionEnd = rawZone[:, :, -3:]
-    initSD = np.std(regionEnd)
-
-    addSD = (sigRef**2/SNR_desired**2 - initSD**2)**(1/2)
-
-    noiseMat = np.random.normal(0,addSD,raw.shape)
-    I_noised = raw + noiseMat*I_mask_factor
-
-    return I_noised, addSD
 
 ################## Parameter Estimation Helper Functions ###############
 
@@ -326,12 +262,6 @@ def check_param_order(popt, func):
             popt[2*i+1] = p_hold
     return popt
 
-def calc_Radu_SNR(sig, est_curve):
-    residuals = sig - est_curve
-    # curve_std = np.max([np.std(residuals), 10**-16])
-    curve_std = np.max([np.mean(residuals**2), 10**-20])
-    return sig[0]/curve_std
-
 def calculate_RSS(data, popt, func):
     est_curve = func(TDATA, *popt)
     RSS = np.sum((est_curve - data)**2)
@@ -348,10 +278,10 @@ def calculate_reg_RSS(data, popt, func, lam):
 
     return RSS + param_RSS
 
-def calculate_BIC(RSS, popt, sigma):
+def calculate_BIC(RSS, popt):
 
     # BIC = 1/TDATA.shape[0] * (RSS + np.log(TDATA.shape[0]) * popt.shape[0]*(sigma)**2)
-    BIC = len(TDATA) * np.log(RSS/(len(TDATA)-len(popt))) + (len(popt)+1)*np.log(len(TDATA))
+    BIC = len(TDATA) * np.log(RSS/(len(TDATA)-len(popt)-1)) + (len(popt)+1)*np.log(len(TDATA))
 
     return BIC
 
@@ -366,12 +296,15 @@ def single_reg_param_est(data, lam, func):
     data_tilde = np.append(data, parameter_tail) # Adds zeros to the end of the regularization array for the param estimation
     
     try:
-        popt, _ = curve_fit(G_reg(lam, func, SA = data_tilde[0]), TDATA, data_tilde, bounds = (lower_bound, upper_bound), p0=init_p, max_nfev = 4000)
+        popt, _, info, _, _ = curve_fit(G_reg(lam, func, SA = data_tilde[0]), TDATA, data_tilde, bounds = (lower_bound, upper_bound), p0=init_p, max_nfev = 4000, full_output = True)
     except Exception as error:
         popt = [0,0,1,1,0]
+        info['fvec'] = np.inf
         print("Error in parameter fitting: " + str(error))
 
-    return popt
+    RSS = np.sum(info['fvec']**2)
+
+    return popt, RSS
 
 def perform_multi_estimates(data, lam, func, n_initials = num_multistarts):
     #Pick n_initials random initial conditions within the bound, and choose the one giving the lowest model-data mismatch residual
@@ -380,9 +313,7 @@ def perform_multi_estimates(data, lam, func, n_initials = num_multistarts):
     reg_RSS_hold = np.inf
     for i in range(n_initials):
 
-        popt = single_reg_param_est(data, lam, func)
-
-        reg_RSS_temp = calculate_reg_RSS(data, popt, func, lam)
+        popt, reg_RSS_temp = single_reg_param_est(data, lam, func)
 
         RSS_temp = calculate_RSS(data, popt, func)
 
@@ -394,7 +325,6 @@ def perform_multi_estimates(data, lam, func, n_initials = num_multistarts):
     popt = check_param_order(best_popt, func)
  
     return popt, RSS_hold
-
 
 
 def BIC_filter(data):
@@ -411,13 +341,11 @@ def BIC_filter(data):
     G_biX_off_params, _ = curve_fit(G_biX_off, TDATA, data, bounds = (biX_lowerBounds, biX_upperBounds), p0=biX_initP, max_nfev = 4000)
     G_moX_off_params, _ = curve_fit(G_moX_off, TDATA, data, bounds = (moX_lowerBounds, moX_upperBounds), p0=moX_initP, max_nfev = 4000)
 
-    curve_SNR = calc_Radu_SNR(data, G_biX_off(TDATA, *G_biX_off_params))
-
     RSS_biX = calculate_RSS(data, G_biX_off_params, G_biX_off)
     RSS_moX = calculate_RSS(data, G_moX_off_params, G_moX_off)
 
-    BIC_G_biX = calculate_BIC(RSS_biX, G_biX_off_params, data[0]/curve_SNR)
-    BIC_G_moX = calculate_BIC(RSS_moX, G_moX_off_params, data[0]/curve_SNR)
+    BIC_G_biX = calculate_BIC(RSS_biX, G_biX_off_params)
+    BIC_G_moX = calculate_BIC(RSS_moX, G_moX_off_params)
 
     return BIC_G_moX < BIC_G_biX, G_moX_off_params, BIC_G_moX
 
@@ -474,14 +402,6 @@ def main_estimator(i_voxel, full_brain_data, func):
     return feature_df
 
 
-#### This ensures that the same mask is applied throughout
-
-if add_mask:
-    I_masked = mask_data(I_raw, mask_amplitude)
-else:
-    I_masked = I_raw
-I_mask_factor = (I_masked!=0)
-
 #### Looping through Iterations of the brain - applying parallel processing to improve the speed
 if __name__ == '__main__':
     freeze_support()
@@ -491,17 +411,18 @@ if __name__ == '__main__':
         np.random.seed(iter)
 
         if add_noise:
-            I_noised = add_noise_brain_uniform(I_masked, SNR_goal, noiseRegion, I_mask_factor, iter)[0]
+            filename = f'{cwd_full}Noise_Generation/Noise_Sets/{noise_iter_folder}/{pat_tag}_slice{slice_num}_iter{iter+1}.pkl'
+            fileObject = open(filename, 'rb')
+            I_noised = pickle.load(fileObject)
+            fileObject.close()
         else:
-            I_noised = I_masked
+            brain_data = scipy.io.loadmat(f'{cwd_full}\\MB_References\\{pat_id}\\{slice_oi}')
+            I_noised = mask_data(brain_data["slcie_oi"], mask_amplitude)
 
         if apply_normalizer:
             noise_iteration = normalize_brain(I_noised)
         else:
             noise_iteration = I_noised
-
-        SNR_collect.append(calculate_brain_SNR(noise_iteration, noiseRegion))
-
 
         print("Finished Assignments...")
 
@@ -536,7 +457,7 @@ if __name__ == '__main__':
 ############## Save General Code ################
 
 hprParams = {
-    "SNR_goal": SNR_goal,
+    "SNR_oi": SNR_oi,
     'n_noise_realizations': iterations,
     'lambdas': lambdas,
     "data_file": pat_id,
@@ -546,14 +467,8 @@ hprParams = {
     'num_multistarts': num_multistarts,
     'model_oi': model_oi,
     'upper_bound': get_upperBound(model_oi),
-    'mask_amp': mask_amplitude,
-    'masked_region': I_mask_factor,
-    'n_horizontal': n_hori,
-    'n_verticle': n_vert,
-    'options': [add_noise, add_mask, apply_normalizer, 
-                subsection, model_selection,
-                multistart_method, testCase],
-    'SNR_array': SNR_collect
+    'options': [add_noise, apply_normalizer, 
+                model_selection, multistart_method]
 }
 
 f = open(seriesFolder + '/hprParameter_info_' + day + month + year +'.pkl','wb')
