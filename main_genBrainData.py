@@ -45,7 +45,7 @@ lambdas = np.append(0, np.logspace(-5,1, n_lambdas))
 addTag = ''
 
 SNR_oi = 100
-date_of_data = '18Apr24'
+date_of_data = '22Apr24'
 
 #There are 8 cpus available on my personal computer
 num_cpus_avail = 1
