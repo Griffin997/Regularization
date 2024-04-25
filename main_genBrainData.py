@@ -74,8 +74,8 @@ output_folder = f"ExperimentalSets/{pat_id}"
 
 SNR_info_path = f'{cwd_full}MB_References/{pat_id}/SNR_info.pkl'
 
-noise_iter_folder = f'{pat_tag}_slice{slice_num}_SNR{SNR_oi}_{date_of_data}'
-noise_iter_path = f'{cwd_full}Noise_Generation/Noise_Sets/{noise_iter_folder}/hprParameter.pkl'
+noise_iter_folder = f'Noise_Generation/Noise_Sets/{pat_tag}_slice{slice_num}_SNR{SNR_oi}_{date_of_data}'
+noise_iter_path = f'{cwd_full}{noise_iter_folder}/hprParameter.pkl'
 
 ############# Global Parameters ###############
 
