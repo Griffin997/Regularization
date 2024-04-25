@@ -32,7 +32,7 @@ import functools
 
 ############# Data Set Options & Hyperparameters ############
 
-add_noise = False              #True for a standard reference and False for a noise set
+add_noise = True              #True for a standard reference and False for a noise set
 apply_normalizer = True        #Normalizes the data during the processing step
 multistart_method = False       #Applies a multistart method for each parameter fitting instance
 model_selection = True         #Compares monoX and biX to be able to choose fit process
@@ -44,16 +44,18 @@ lambdas = np.append(0, np.logspace(-5,1, n_lambdas))
 
 addTag = ''
 
-SNR_oi = 100
+SNR_oi = 75
 date_of_data = '22Apr24'
 
 #There are 8 cpus available on my personal computer
-num_cpus_avail = 1
+num_cpus_avail = 60
 
 if not add_noise:
     iterations = 1
+    SNR_oi = np.nan
 else:
-    iterations = 1 #Check that this is at most the largest of the data set
+    SNR_oi = 75
+    iterations = 20 #Check that this is at most the largest of the data set
 
 ############## Setting Files Data ##########
 
@@ -139,7 +141,6 @@ if add_noise:
     seriesTag = (seriesTag + f"SNR_{SNR_oi}_")
 else:
     seriesTag = (seriesTag + f"NoNoise_")
-    seriesTag = (seriesTag + f"subsection_")
 
 if not apply_normalizer:
     seriesTag = (seriesTag + "NoNorm" + "_")
@@ -416,8 +417,8 @@ if __name__ == '__main__':
             I_noised = pickle.load(fileObject)
             fileObject.close()
         else:
-            brain_data = scipy.io.loadmat(f'{cwd_full}\\MB_References\\{pat_id}\\{slice_oi}')
-            I_noised = mask_data(brain_data["slcie_oi"], mask_amplitude)
+            brain_data = scipy.io.loadmat(f'{cwd_full}MB_References/{pat_id}/{slice_oi}')
+            I_noised = mask_data(brain_data["slice_oi"], mask_amplitude)
 
         if apply_normalizer:
             noise_iteration = normalize_brain(I_noised)
