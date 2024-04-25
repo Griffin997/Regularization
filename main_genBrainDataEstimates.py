@@ -32,7 +32,7 @@ import functools
 
 ############# Data Set Options & Hyperparameters ############
 
-add_noise = True              #True for a standard reference and False for a noise set
+add_noise = False              #True for a standard reference and False for a noise set
 apply_normalizer = True        #Normalizes the data during the processing step
 multistart_method = False       #Applies a multistart method for each parameter fitting instance
 model_selection = True         #Compares monoX and biX to be able to choose fit process
@@ -44,8 +44,8 @@ lambdas = np.append(0, np.logspace(-5,1, n_lambdas))
 
 addTag = ''
 
-SNR_oi = 75
-date_of_data = '22Apr24'
+date_of_data = '25Apr24'
+SNR_date = '25Apr24'
 
 #There are 8 cpus available on my personal computer
 num_cpus_avail = 60
@@ -54,8 +54,8 @@ if not add_noise:
     iterations = 1
     SNR_oi = np.nan
 else:
-    SNR_oi = 75
-    iterations = 20 #Check that this is at most the largest of the data set
+    SNR_oi = 100
+    iterations = 1 #Check that this is at most the largest of the data set
 
 ############## Setting Files Data ##########
 
@@ -64,18 +64,14 @@ base_file = 'Regularization'
 cwd_full = f'{cwd_temp.split(base_file, 1)[0]}{base_file}/'
 
 slice_num = 5
-slice_oi = f"NESMA_cropped_slice{slice_num}.mat"#"BIC_triTest.mat"#"NESMA_cropped_slice5.mat"
-pat_id = "BLSA_1742_04_MCIAD_m41"#"BIC_tests"#"BLSA_1742_04_MCIAD_m41"
-specific_name = 'slice_oi'#"BIC_triTest"#'slice_oi' - this is important if the data strux has an internal name
+pat_id = "BLSA_1742_04_MCIAD_m41"#"BLSA_1742_04_MCIAD_m41"
 
 pat_tag = pat_id[-3:] #this tag will show up in the file name
 
 output_folder = f"ExperimentalSets/{pat_id}"
 
-SNR_info_path = f'{cwd_full}MB_References/{pat_id}/SNR_info.pkl'
-
 noise_iter_folder = f'Noise_Generation/Noise_Sets/{pat_tag}_slice{slice_num}_SNR{SNR_oi}_{date_of_data}'
-noise_iter_path = f'{cwd_full}{noise_iter_folder}/hprParameter.pkl'
+SNR_info_folder = f'MB_References/{pat_id}/SNR_info_{SNR_date}.pkl'
 
 ############# Global Parameters ###############
 
@@ -88,40 +84,40 @@ else:
 
 ############# SNR Information ###############
 
-isFile_SNR = os.path.isfile(SNR_info_path)
-
-isFile_iter = os.path.isfile(noise_iter_path)
-
-if isFile_SNR:
+file_path = f'{cwd_full}{SNR_info_folder}'
+if os.path.isfile(file_path):
     print('Data was loaded in')
-    with open(SNR_info_path, 'rb') as handle:
+    with open(f'{cwd_full}{SNR_info_folder}', 'rb') as handle:
         dict = pickle.load(handle)
         pat_id_check = dict["Patient_ID"]
-        sigma_slice = dict['slice_num']
-        sigma = dict['sigma']
         vert1 = dict['vert1']
         vert2 = dict['vert2']
         hori1 = dict['hori1']
         hori2 = dict['hori2']
-        sigma_SNR = dict['SNR']
         # all pixels with a lower mask amplitude are considered to be free water (i.e. vesicles)
         mask_amplitude = dict['mask_amplitude'] 
-        date_stamp = dict['date_stamp']
         n_vert = dict['n_vert']
         n_hori = dict['n_hori']
         n_elem = dict['n_elem']
         handle.close()
+else:
+    raise ValueError(f'There is not a valid file to load. Check path:{file_path}')
 
-if isFile_iter:
-    with open(noise_iter_path, 'rb') as handle:
-        dict = pickle.load(handle)
-        SNR_goal = dict["SNR_goal"]
-        SNR_desired = dict["SNR_desired"]
-        n_noise_realizations = dict["num_noise_realizations"]
-        noise_date_stamp = dict["noise_date_stamp"]
-        handle.close()
-    assert(noise_date_stamp == date_stamp)
+file_path = f'{cwd_full}{noise_iter_folder}/hprParameter.pkl'
+if add_noise:
+    if os.path.isfile(file_path):
+        with open(f'{cwd_full}{noise_iter_folder}/hprParameter.pkl', 'rb') as handle:
+            dict = pickle.load(handle)
+            SNR_desired = dict["SNR_desired"]
+            n_noise_realizations = dict["num_noise_realizations"]
+            SNR_root_folder = dict["SNR_file_source"]
+            handle.close()
+    else:
+        raise ValueError(f'There is not a valid file to load. Check path:{file_path}')
+
     assert(iterations <= n_noise_realizations)
+    assert(SNR_root_folder == SNR_info_folder)
+    assert(SNR_oi == SNR_desired)
 
 t_increment_brain = 11.3 #This is a measurement originally indicated by Chuan Bi in the initial email about this data
 TDATA = np.linspace(t_increment_brain, (n_elem)*(t_increment_brain), n_elem)
@@ -281,7 +277,6 @@ def calculate_reg_RSS(data, popt, func, lam):
 
 def calculate_BIC(RSS, popt):
 
-    # BIC = 1/TDATA.shape[0] * (RSS + np.log(TDATA.shape[0]) * popt.shape[0]*(sigma)**2)
     BIC = len(TDATA) * np.log(RSS/(len(TDATA)-len(popt)-1)) + (len(popt)+1)*np.log(len(TDATA))
 
     return BIC
@@ -412,12 +407,12 @@ if __name__ == '__main__':
         np.random.seed(iter)
 
         if add_noise:
-            filename = f'{cwd_full}Noise_Generation/Noise_Sets/{noise_iter_folder}/{pat_tag}_slice{slice_num}_iter{iter+1}.pkl'
+            filename = f'{cwd_full}{noise_iter_folder}/{pat_tag}_slice{slice_num}_iter{iter+1}.pkl'
             fileObject = open(filename, 'rb')
             I_noised = pickle.load(fileObject)
             fileObject.close()
         else:
-            brain_data = scipy.io.loadmat(f'{cwd_full}MB_References/{pat_id}/{slice_oi}')
+            brain_data = scipy.io.loadmat(f'{cwd_full}MB_References/{pat_id}/NESMA_cropped_slice{slice_num}.mat')
             I_noised = mask_data(brain_data["slice_oi"], mask_amplitude)
 
         if apply_normalizer:
@@ -462,7 +457,7 @@ hprParams = {
     'n_noise_realizations': iterations,
     'lambdas': lambdas,
     "data_file": pat_id,
-    "data_slice": slice_oi,
+    "data_slice": slice_num,
     'tdata': TDATA,
     'ob_weight': ob_weight,
     'num_multistarts': num_multistarts,
