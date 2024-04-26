@@ -35,7 +35,7 @@ import functools
 add_noise = False              #True for a standard reference and False for a noise set
 apply_normalizer = True        #Normalizes the data during the processing step
 multistart_method = False       #Applies a multistart method for each parameter fitting instance
-model_selection = True         #Compares monoX and biX to be able to choose fit process
+model_selection = False         #Compares monoX and biX to be able to choose fit process
 
 ############## Frequently Changed Parameters ###########
 
@@ -54,8 +54,8 @@ if not add_noise:
     iterations = 1
     SNR_oi = np.nan
 else:
-    SNR_oi = 100
-    iterations = 1 #Check that this is at most the largest of the data set
+    SNR_oi = 75
+    iterations = 20 #Check that this is at most the largest of the data set
 
 ############## Setting Files Data ##########
 
@@ -64,13 +64,16 @@ base_file = 'Regularization'
 cwd_full = f'{cwd_temp.split(base_file, 1)[0]}{base_file}/'
 
 slice_num = 5
-pat_id = "BLSA_1742_04_MCIAD_m41"#"BLSA_1742_04_MCIAD_m41"
+pat_id = "BLSA_1742_04_MCIAD_m41"#"BLSA_1742_04_MCIAD_m41"#"BLSA_1935_06_MCIAD_m79"
 
 pat_tag = pat_id[-3:] #this tag will show up in the file name
 
 output_folder = f"ExperimentalSets/{pat_id}"
 
-noise_iter_folder = f'Noise_Generation/Noise_Sets/{pat_tag}_slice{slice_num}_SNR{SNR_oi}_{date_of_data}'
+if add_noise:
+    noise_iter_folder = f'Noise_Generation/Noise_Sets/{pat_tag}_slice{slice_num}_SNR{SNR_oi}_{date_of_data}'
+else:
+    noise_iter_folder = f'MB_References/{pat_id}'
 SNR_info_folder = f'MB_References/{pat_id}/SNR_info_{SNR_date}.pkl'
 
 ############# Global Parameters ###############
@@ -89,12 +92,6 @@ if os.path.isfile(file_path):
     print('Data was loaded in')
     with open(f'{cwd_full}{SNR_info_folder}', 'rb') as handle:
         dict = pickle.load(handle)
-        pat_id_check = dict["Patient_ID"]
-        vert1 = dict['vert1']
-        vert2 = dict['vert2']
-        hori1 = dict['hori1']
-        hori2 = dict['hori2']
-        # all pixels with a lower mask amplitude are considered to be free water (i.e. vesicles)
         mask_amplitude = dict['mask_amplitude'] 
         n_vert = dict['n_vert']
         n_hori = dict['n_hori']
@@ -111,6 +108,7 @@ if add_noise:
             SNR_desired = dict["SNR_desired"]
             n_noise_realizations = dict["num_noise_realizations"]
             SNR_root_folder = dict["SNR_file_source"]
+            mask_shape = dict['mask_shape']
             handle.close()
     else:
         raise ValueError(f'There is not a valid file to load. Check path:{file_path}')
@@ -189,11 +187,12 @@ model_oi = G_biX_off
 
 ############# Data Processing Functions ##############
 
-def mask_data(raw, mask_amp):
+def mask_data(data, mask_amp):
     #Sets every decay curve in the data set where the amplitude is less than a threshold value to zero
-    I_masked = np.copy(raw)
-    I_masked[I_masked[:,:,0]<mask_amp] = 0
-    return I_masked
+    I_masked = np.copy(data)
+    mask = I_masked[:,:,0]<mask_amp
+    I_masked[mask] = 0
+    return I_masked, mask
 
 def normalize_brain(I_data):
     n_vert, n_hori, n_elem = I_data.shape
@@ -412,8 +411,9 @@ if __name__ == '__main__':
             I_noised = pickle.load(fileObject)
             fileObject.close()
         else:
-            brain_data = scipy.io.loadmat(f'{cwd_full}MB_References/{pat_id}/NESMA_cropped_slice{slice_num}.mat')
-            I_noised = mask_data(brain_data["slice_oi"], mask_amplitude)
+            brain_data = scipy.io.loadmat(f'{cwd_full}{noise_iter_folder}/NESMA_cropped_slice{slice_num}.mat')
+            I_noised, mask = mask_data(brain_data["slice_oi"], mask_amplitude)
+            mask_shape = (mask+1)%2
 
         if apply_normalizer:
             noise_iteration = normalize_brain(I_noised)
@@ -455,9 +455,12 @@ if __name__ == '__main__':
 hprParams = {
     "SNR_oi": SNR_oi,
     'n_noise_realizations': iterations,
+    'mask_shape': mask_shape,
     'lambdas': lambdas,
-    "data_file": pat_id,
+    'SNR_info_folder': SNR_info_folder,
+    "noise_iter_folder": noise_iter_folder,
     "data_slice": slice_num,
+    "pat_id": pat_id,
     'tdata': TDATA,
     'ob_weight': ob_weight,
     'num_multistarts': num_multistarts,
