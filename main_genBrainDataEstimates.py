@@ -63,8 +63,8 @@ cwd_temp = os.getcwd()
 base_file = 'Regularization'
 cwd_full = f'{cwd_temp.split(base_file, 1)[0]}{base_file}/'
 
-slice_num = 5
-pat_id = "BLSA_1742_04_MCIAD_m41"#"BLSA_1742_04_MCIAD_m41"#"BLSA_1935_06_MCIAD_m79"
+slice_num = 3
+pat_id = "BLSA_1935_06_MCIAD_m79"#"BLSA_1742_04_MCIAD_m41"#"BLSA_1935_06_MCIAD_m79"
 
 pat_tag = pat_id[-3:] #this tag will show up in the file name
 
