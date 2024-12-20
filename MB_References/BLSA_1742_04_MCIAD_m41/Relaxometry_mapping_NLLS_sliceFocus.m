@@ -12,6 +12,7 @@ s_num = 5;
 MWF_slice=single(zeros(dim1,dim2));
 T2s_slice=single(zeros(dim1,dim2));
 T2l_slice=single(zeros(dim1,dim2));
+RSS_slice=single(zeros(dim1,dim2));
 
 %% Mapping
 options=optimset('Display','off');
@@ -25,6 +26,7 @@ for i=1:dim1
             MWF_slice(i,j)=Pi(2);
             T2s_slice(i,j)=Pi(3);
             T2l_slice(i,j)=Pi(4);
+            RSS_slice(i,j)=sum(fit_bi(Pi,y_NESMA,TE).^2);
             
         end
     end
@@ -44,15 +46,19 @@ m41_data = struct();
 m41_data.slice.T2l = T2l_slice;
 m41_data.slice.T2s = T2s_slice;
 m41_data.slice.MWF = MWF_slice;
+m41_data.slice.RSS = RSS_slice;
 
-save(strcat('m41_dataStruct_slice',string(s_num).mat'), '-struct', 'm41_data');
+save(strcat('m41_biX_dataStruct_slice',string(s_num),'.mat'), '-struct', 'm41_data');
 
 %%
 
-load(strcat('m41_dataStruct_slice',string(s_num),'_iter2_300T22.mat'))
-T2l_slice = slice.T2l;
-T2s_slice = slice.T2s;
-MWF_slice = slice.MWF;
+load_here = false;
+if load_here
+    load(strcat('m41_dataStruct_slice',string(s_num),'_iter2_300T22.mat'))
+    T2l_slice = slice.T2l;
+    T2s_slice = slice.T2s;
+    MWF_slice = slice.MWF;
+end
 
 %% MB Results
 
