@@ -39,8 +39,8 @@ model_selection = False         #Compares monoX and biX to be able to choose fit
 
 ############## Frequently Changed Parameters ###########
 
-n_lambdas = 101
-lambdas = np.append(0, np.logspace(-5,1, n_lambdas))
+n_lambdas = 1#101
+lambdas = np.array([0])#np.append(0, np.logspace(-5,1, n_lambdas))
 
 addTag = ''
 
@@ -48,7 +48,7 @@ date_of_data = '25Apr24'
 SNR_date = '25Apr24'
 
 #There are 8 cpus available on my personal computer
-num_cpus_avail = 60
+num_cpus_avail = 3#60
 
 if not add_noise:
     iterations = 1
@@ -89,7 +89,7 @@ else:
 
 file_path = f'{cwd_full}{SNR_info_folder}'
 if os.path.isfile(file_path):
-    print('Data was loaded in')
+    # print('Data was loaded in')
     with open(f'{cwd_full}{SNR_info_folder}', 'rb') as handle:
         dict = pickle.load(handle)
         mask_amplitude = dict['mask_amplitude'] 
@@ -452,24 +452,24 @@ if __name__ == '__main__':
 
 ############## Save General Code ################
 
-hprParams = {
-    "SNR_oi": SNR_oi,
-    'n_noise_realizations': iterations,
-    'mask_shape': mask_shape,
-    'lambdas': lambdas,
-    'SNR_info_folder': SNR_info_folder,
-    "noise_iter_folder": noise_iter_folder,
-    "data_slice": slice_num,
-    "pat_id": pat_id,
-    'tdata': TDATA,
-    'ob_weight': ob_weight,
-    'num_multistarts': num_multistarts,
-    'model_oi': model_oi,
-    'upper_bound': get_upperBound(model_oi),
-    'options': [add_noise, apply_normalizer, 
-                model_selection, multistart_method]
-}
+    hprParams = {
+        "SNR_oi": SNR_oi,
+        'n_noise_realizations': iterations,
+        'mask_shape': mask_shape,
+        'lambdas': lambdas,
+        'SNR_info_folder': SNR_info_folder,
+        "noise_iter_folder": noise_iter_folder,
+        "data_slice": slice_num,
+        "pat_id": pat_id,
+        'tdata': TDATA,
+        'ob_weight': ob_weight,
+        'num_multistarts': num_multistarts,
+        'model_oi': model_oi,
+        'upper_bound': get_upperBound(model_oi),
+        'options': [add_noise, apply_normalizer, 
+                    model_selection, multistart_method]
+    }
 
-f = open(seriesFolder + '/hprParameter_info_' + day + month + year +'.pkl','wb')
-pickle.dump(hprParams,f)
-f.close()
+    f = open(seriesFolder + '/hprParameter_info_' + day + month + year +'.pkl','wb')
+    pickle.dump(hprParams,f)
+    f.close()
