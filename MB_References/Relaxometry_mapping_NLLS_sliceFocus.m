@@ -2,11 +2,24 @@ clear;clc;
 
 %% Inputs
 
-load NESMA_cropped_slice5;
+cropped_opt = true;
+file_name = 'BLSA_1935_06_MCIAD_m79';
+s_num = 8;
+pat_num = file_name(end-2:end);
+
+if cropped_opt
+    crop_string_add = '_cropped';
+else
+    crop_string_add = '';
+end
+
+slice_file = strcat('NESMA',crop_string_add,'_slice', num2str(s_num));
+
+load(strcat(file_name,'\', slice_file,'.mat'));
 [dim1,dim2,dim3]=size(slice_oi);
 TE=11.32:11.32:11.32*32;
 
-s_num = 5;
+% s_num = str2num(slice_file(end));
 
 %% Initialization
 MWF_slice=single(zeros(dim1,dim2));
@@ -48,11 +61,11 @@ m41_data.slice.T2s = T2s_slice;
 m41_data.slice.MWF = MWF_slice;
 m41_data.slice.RSS = RSS_slice;
 
-save(strcat('m41_biX_dataStruct_NESMA_slice',string(s_num),'.mat'), '-struct', 'm41_data');
+save(strcat(file_name,'\','m41_biX_dataStruct_NESMA',crop_string_add,'_slice',string(s_num),'.mat'), '-struct', 'm41_data');
 
 %%
 
-load_here = true;
+load_here = false;
 if load_here
     load(strcat('m41_biX_dataStruct_slice',string(s_num),'.mat'))
     T2l_slice = slice.T2l;
@@ -62,7 +75,7 @@ end
 
 %% MB Results
 
-load("m41_dataStruct.mat")
+load(strcat(file_name,'\','m41',crop_string_add,'_dataStruct.mat'));
 T2l_NESMA = NESMA.T2l;
 T2s_NESMA = NESMA.T2s;
 MWF_NESMA = NESMA.MWF;
@@ -97,25 +110,25 @@ title("Raw Brain MWF")
 
 %%
 
-load I4D_NESMA;
-load I4D_raw;
+% load I4D_NESMA;
+% load I4D_raw;
 
 %%
 
-figure;
-imagesc(slice_oi(:,:,1) - I4D_NESMA(:,:,s_num,1));colormap jet; axis off;colorbar;
-sgtitle(strcat("NESMA Difference Signals - m41 - slice ", string(s_num)))
-
-figure;
-imagesc(slice_oi(:,:,1) - I4D_raw(:,:,s_num,1));colormap jet; axis off;colorbar;
-sgtitle(strcat("Raw Difference Signals - m41 - slice ", string(s_num)))
-
-%%
-
-figure;
-imagesc(abs(slice_oi(:,:,1) - I4D_NESMA(:,:,s_num,1))>0);colormap jet; axis off;colorbar;
-sgtitle(strcat("NESMA Difference Signals Location - m41 - slice ", string(s_num)))
-
-figure;
-imagesc(abs(slice_oi(:,:,1) - I4D_raw(:,:,s_num,1))>0);colormap jet; axis off;colorbar;
-sgtitle(strcat("Raw Difference Signals Location - m41 - slice ", string(s_num)))
+% figure;
+% imagesc(slice_oi(:,:,1) - I4D_NESMA(:,:,s_num,1));colormap jet; axis off;colorbar;
+% sgtitle(strcat("NESMA Difference Signals - m41 - slice ", string(s_num)))
+% 
+% figure;
+% imagesc(slice_oi(:,:,1) - I4D_raw(:,:,s_num,1));colormap jet; axis off;colorbar;
+% sgtitle(strcat("Raw Difference Signals - m41 - slice ", string(s_num)))
+% 
+% %%
+% 
+% figure;
+% imagesc(abs(slice_oi(:,:,1) - I4D_NESMA(:,:,s_num,1))>0);colormap jet; axis off;colorbar;
+% sgtitle(strcat("NESMA Difference Signals Location - m41 - slice ", string(s_num)))
+% 
+% figure;
+% imagesc(abs(slice_oi(:,:,1) - I4D_raw(:,:,s_num,1))>0);colormap jet; axis off;colorbar;
+% sgtitle(strcat("Raw Difference Signals Location - m41 - slice ", string(s_num)))

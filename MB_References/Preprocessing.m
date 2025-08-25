@@ -14,9 +14,10 @@
 
 % Choose the data set to download and load file name
 directory_name = "MB_References";
-file_name = "BLSA_1935_06_MCIAD_m79";
+file_name = "BLSA_1742_04_MCIAD_m41"; %"BLSA_1935_06_MCIAD_m79"  OR  "BLSA_1742_04_MCIAD_m41"
 NESMA_name = "I4D_NESMA.mat";
 raw_name = "I4D_raw.mat";
+addpath(file_name);
 load(strcat(directory_name,"\",file_name,'\', NESMA_name)); %loads as I4D_NESMA
 load(strcat(directory_name,"\",file_name,'\', raw_name)); %loads as I4D_raw
 
@@ -24,6 +25,18 @@ save_file = true;
 slice_focus = 5;
 
 [n_vert, n_hori, n_slices, n_elem] = size(I4D_NESMA);
+
+%% General Cropping
+%This cropping is applied to all images consistently but is also applied to
+%the original dataset
+
+I4D_NESMA_cropped = I4D_NESMA(72:216, 48:232, :, :);
+I4D_raw_cropped = I4D_raw(72:216, 48:232, :, :);
+
+if save_file
+    save(strcat(file_name,'\','I4D_raw_cropped.mat'), 'I4D_raw_cropped');
+    save(strcat(file_name,'\','I4D_NESMA_cropped.mat'), 'I4D_NESMA_cropped');
+end
 
 %% Check Scans Pre Skull Stripping
 
